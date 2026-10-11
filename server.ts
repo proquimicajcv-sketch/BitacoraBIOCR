@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -21,12 +22,56 @@ const ai = new GoogleGenAI({
   },
 });
 
+const DB_DIR = path.resolve('data');
+const DB_FILE = path.join(DB_DIR, 'specimens-database.json');
+
+// Ensure database directory exists
+if (!fs.existsSync(DB_DIR)) {
+  try {
+    fs.mkdirSync(DB_DIR, { recursive: true });
+  } catch (err) {
+    console.warn('Could not create data dir:', err);
+  }
+}
+
+/**
+ * Server JSON Database Endpoints for Cross-Device Persistence
+ */
+app.get('/api/database/specimens', (_req: Request, res: Response): void => {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const content = fs.readFileSync(DB_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      res.json({ success: true, data });
+      return;
+    }
+    res.json({ success: true, data: null });
+  } catch (err: any) {
+    console.warn('Error reading database file:', err);
+    res.json({ success: true, data: null });
+  }
+});
+
+app.post('/api/database/specimens', (req: Request, res: Response): void => {
+  try {
+    const { specimens } = req.body;
+    if (!Array.isArray(specimens)) {
+      res.status(400).json({ success: false, error: 'Formato inválido' });
+      return;
+    }
+    fs.writeFileSync(DB_FILE, JSON.stringify(specimens, null, 2), 'utf-8');
+    res.json({ success: true, count: specimens.length, message: 'Base de datos guardada en servidor' });
+  } catch (err: any) {
+    console.error('Error writing database file:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 /**
  * Helper to fetch image and convert to base64 if an HTTP URL is supplied
  */
 async function getImagePart(imageUrl?: string, imageBase64?: string): Promise<{ mimeType: string; data: string } | null> {
   if (imageBase64) {
-    // If base64 contains data:image/xxx;base64, prefix
     const matches = imageBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
     if (matches) {
       return {
@@ -66,7 +111,6 @@ async function getImagePart(imageUrl?: string, imageBase64?: string): Promise<{ 
 app.post('/api/ai/identify-specimen', async (req: Request, res: Response): Promise<void> => {
   try {
     const { imageUrl, imageBase64, userNotes, locationHint } = req.body;
-
     const imagePart = await getImagePart(imageUrl, imageBase64);
 
     const promptText = `
@@ -75,17 +119,17 @@ Analiza detalladamente esta fotografía de campo del espécimen biológico.
 ${locationHint ? `Pista de ubicación en Costa Rica: ${locationHint}` : ''}
 ${userNotes ? `Notas de campo adicionales: ${userNotes}` : ''}
 
-Tu tarea es:
-1. Identificar la especie con rigor científico (género y epíteto específico, p. ej. "Agalychnis callidryas").
-2. Proveer los nombres vernáculos comunes en español y en inglés.
-3. Clasificar la jerarquía taxonómica completa (Reino, Filo, Clase, Orden, Familia, Género, Especie, y Taxon ID estimado de ITIS/NCBI).
-4. Asignar el estado de conservación según la Lista Roja de la UICN (código LC, NT, VU, EN o CR, etiqueta y tendencia) y estatus CITES (Apéndice I, II, III o Sin clasificar) con su distribución biogeográfica en Costa Rica / Mesoamérica.
-5. Suministrar morfometría típica para el individuo (Longitud Hocico-Cloaca LHC en milímetros o envergadura/longitud total, descripción anatómica y cromática exhaustiva en español de los patrones observados en la foto).
-6. Describir la etología y ecología reproductiva habitual de esta especie en el bosque tropical costarricense.
-7. Mencionar 2 o 3 especies simpátricas habituales que comparten su microhábitat en Costa Rica.
-8. Sugerir la zona de vida de Holdridge (p. ej. Bosque Tropical Húmedo bmh-T, Bosque Nuboso Premontano bp-PM, etc.), elevación típica en metros sobre el nivel del mar y microhábitat específico (p. ej. "Estrato arbustivo sobre arroyo de aguas lénticas").
-9. Si es un anfibio o ave o emite vocalización, proveer los atributos bioacústicos típicos (tipo de canto, rango de frecuencia dominante en kHz, patrón sonoro).
-10. Dar un puntaje de confianza estimado (0.0 a 1.0) y una justificación biológica diagnóstica en español (identificationRationale) explicando los rasgos anatómicos que confirman la identificación.
+Tu tarea es proveer información científica fidedigna sobre:
+1. Identificación taxonómica completa (género, especie, nombre común en español/inglés, reino, filo, clase, orden, familia, género, taxon ID ITIS/NCBI).
+2. Estado de conservación UICN y CITES con distribución biogeográfica en Costa Rica.
+3. Cromática y Anatomía detallada.
+4. Etología y Comportamiento diario (forrajeo, horarios de actividad, termorregulación).
+5. Cortejo y Reproducción (rituales nupciales, amplexo/cortejo, oviposición o anidación, masa de huevos/crías, cuidado parental).
+6. Relaciones intra e interespecíficas (territorialidad entre individuos, competencia simpátrica, depredadores naturales en Costa Rica y defensas químicas/alcaloides/veneno/aposematismo).
+7. Datos importantes de investigación científica confirmada (estudios de campo UCR, OET, SINAC, Smithsonian o descubrimientos publicados sobre la especie).
+8. Zona de vida de Holdridge en Costa Rica (código y nombre: bmh-T, bp-PM, bs-T, bp-MB, etc.), rango de elevación y microhábitat específico.
+9. Bioacústica si emite sonidos.
+10. Puntaje de confianza (0.0 a 1.0) y explicación diagnóstica.
 
 Responde ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exacta:
 {
@@ -117,14 +161,17 @@ Responde ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exac
     "totalLengthMm": 58.0,
     "weightGrams": 15.0,
     "colorationAndAnatomy": "Descripción cromática y diagnóstica detallada...",
-    "ethologyAndReproduction": "Descripción de comportamiento, reproducción...",
+    "ethologyAndReproduction": "Descripción de comportamiento general...",
+    "courtshipAndMating": "Ritual de cortejo, vocalizaciones nupciales, amplexo axilar y anidación sobre hojas suspendidas...",
+    "interspecificRelations": "Territorialidad entre machos por sitios de canto, depredación por serpientes Leptodeira septentrionalis y avispas Polybia, defensas...",
+    "confirmedScientificData": "Investigaciones de la OET en La Selva y Boston University demostraron eclosión inducida por vibraciones sísmicas de depredadores...",
     "sympatricSpecies": [
       { "scientificName": "Nombre científico", "commonName": "Nombre común", "count": 2 }
     ]
   },
   "suggestedHabitat": {
-    "lifeZone": "Bosque Tropical Húmedo (Clasificación bmh-T)",
-    "microhabitat": "Estrato arbustivo sobre charca temporal...",
+    "lifeZone": "Bosque Muy Húmedo Tropical (bmh-T)",
+    "microhabitat": "Estrato arbustivo sobre charca temporal de lluvia...",
     "elevationMeters": 68,
     "locality": "Estación La Selva, Sarapiquí",
     "province": "Heredia, Costa Rica",
@@ -138,7 +185,7 @@ Responde ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exac
     "audioPatternDescription": "\\"Chack-chack\\" gutural monotonal"
   },
   "confidenceScore": 0.95,
-  "identificationRationale": "La imagen muestra con claridad las pupilas verticales rojas..."
+  "identificationRationale": "La imagen muestra pupilas verticales rojas y membrana nictitante reticulada diagnóstica."
 }
 `;
 
@@ -175,7 +222,6 @@ Responde ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exac
     try {
       parsedData = JSON.parse(textOutput);
     } catch {
-      // Fallback cleanup if model wrapped with ```json
       const cleaned = textOutput.replace(/```json/g, '').replace(/```/g, '').trim();
       parsedData = JSON.parse(cleaned);
     }
@@ -190,6 +236,98 @@ Responde ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exac
       success: false,
       error: error?.message || 'Error al procesar la identificación con IA',
     });
+  }
+});
+
+/**
+ * AI Scientific Enrichment Endpoint: Nombre científico, Nombre común, Taxonomía,
+ * Anatomía, Cortejo, Etología, Relaciones ecológicas y Datos confirmados
+ */
+app.post('/api/ai/enrich-scientific-data', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { scientificName, commonName, taxonGroup } = req.body;
+    const queryTerm = (scientificName || commonName || '').trim();
+
+    if (!queryTerm) {
+      res.status(400).json({
+        success: false,
+        error: 'Debe proporcionar al menos el nombre común o el nombre científico de la especie.',
+      });
+      return;
+    }
+
+    const promptText = `
+Eres un biólogo taxónomo y ecólogo investigador especialista en la biodiversidad de Costa Rica y el Neotrópico (UCR, OET, SINAC, INBio, Smithsonian).
+
+El usuario necesita identificar y completar 100% la ficha científica para este organismo:
+- Nombre científico proporcionado: "${scientificName || 'No indicado'}"
+- Nombre común proporcionado: "${commonName || 'No indicado'}"
+- Grupo taxonómico aproximado: "${taxonGroup || 'No indicado'}"
+
+Tu tarea:
+1. Si el usuario dio solo el nombre común (ej. "Rana de ojos rojos", "Quetzal", "Jaguar", "Yigüirro", "Guaria morada"), determina con exactitud su nombre científico binomial válido para Costa Rica, su jerarquía taxonómica completa y grupo taxonómico.
+2. Si el usuario dio solo el nombre científico (ej. "Agalychnis callidryas", "Pharomachrus mocinno"), determina su nombre común en español utilizado en Costa Rica y en inglés.
+3. Si dio ambos, valida la taxonomía y completa todos los detalles morfológicos, etológicos y reproductivos.
+4. Genera datos exhaustivos y fidedignos confirmados en investigaciones de campo en Costa Rica (UCR / OET La Selva, Monteverde, Sirena, Palo Verde, etc.).
+
+Responde ÚNICAMENTE con un JSON válido con la siguiente estructura:
+{
+  "scientificName": "Género epíteto",
+  "commonName": "Nombre común en Costa Rica / Nombre en inglés",
+  "taxonGroup": "Amphibia" | "Aves" | "Mammalia" | "Insecta" | "Reptilia" | "Plantae",
+  "taxonomy": {
+    "kingdom": "Animalia" o "Plantae",
+    "phylum": "Chordata",
+    "class": "Amphibia",
+    "order": "Anura",
+    "family": "Hylidae",
+    "genus": "Agalychnis",
+    "species": "callidryas"
+  },
+  "morphometrics": {
+    "snoutVentLengthMm": 58.0,
+    "totalLengthMm": 58.0,
+    "weightGrams": 15.0
+  },
+  "colorationAndAnatomy": "Morfología diagnóstica, detalles cromáticos, adaptaciones esqueléticas, tegumento, plumaje o escamas, dimorfismo sexual.",
+  "ethologyAndReproduction": "Patrones etológicos, ritmos circadianos, estrategias de forrajeo y termorregulación en su hábitat costarricense.",
+  "courtshipAndMating": "Rituales de cortejo, señales visuales/bioacústicas de atracción, amplexo/cópula, modo reproductivo, fecundación, cuidados parentales y anidación/ovoposición.",
+  "interspecificRelations": "Territorialidad intraespecífica, relaciones con especies simpátricas, principales depredadores en Costa Rica, mecanismos de defensa (aposematismo, camuflaje, toxinas, tanatosis).",
+  "confirmedScientificData": "Datos y descubrimientos científicos confirmados por investigaciones biológicas de campo en Costa Rica (citas de estaciones como La Selva OET, Monteverde, Sirena o universidades UCR/UNA).",
+  "suggestedHoldridgeZone": "Nombre completo de la zona de vida de Holdridge en Costa Rica (ej. Bosque Muy Húmedo Tropical (bmh-T))",
+  "microhabitat": "Microhábitat exacto donde suele registrarse (follaje, arroyo, estrato arbóreo, hojarasca)",
+  "elevationMeters": 68,
+  "hasBioacoustics": true,
+  "bioacoustics": {
+    "title": "Canto de Anuncio o Llamado",
+    "callType": "Vocalización Territorial / Reproductiva",
+    "dominantFrequencyRange": "1.8 - 2.4 kHz",
+    "audioPatternDescription": "Descripción de la pauta bioacústica o sonido emitido"
+  }
+}
+`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: promptText,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const textOutput = response.text || '{}';
+    let parsedData;
+    try {
+      parsedData = JSON.parse(textOutput);
+    } catch {
+      const cleaned = textOutput.replace(/```json/g, '').replace(/```/g, '').trim();
+      parsedData = JSON.parse(cleaned);
+    }
+
+    res.json({ success: true, data: parsedData });
+  } catch (error: any) {
+    console.error('Error in scientific enrichment:', error);
+    res.status(500).json({ success: false, error: error?.message || 'Error al enriquecer datos científicos' });
   }
 });
 

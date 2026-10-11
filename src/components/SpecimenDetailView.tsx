@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { SpecimenRecord } from '../types/specimen';
-import { playFrogCall, generateSonogramWav, SoundPlaybackController } from '../utils/audioBioacoustics';
-import { exportDarwinCoreJson } from '../utils/darwinCoreExport';
+import { SpecimenRecord, BioacousticRecord } from '../types/specimen';
+import {
+  playFrogCall,
+  playCustomAudio,
+  generateSonogramWav,
+  SoundPlaybackController,
+} from '../utils/audioBioacoustics';
+import { AudioRecordingModal } from './AudioRecordingModal';
 
 interface SpecimenDetailViewProps {
   specimen: SpecimenRecord;
@@ -9,6 +14,8 @@ interface SpecimenDetailViewProps {
   onEdit: (specimen: SpecimenRecord) => void;
   onOpenMap: (specimen: SpecimenRecord) => void;
   onOpenDarwinCoreModal: (specimen: SpecimenRecord) => void;
+  onDelete: (specimenId: string) => void;
+  onUpdateBioacoustics: (specimenId: string, bioacoustics?: BioacousticRecord) => void;
 }
 
 export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
@@ -17,11 +24,15 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   onEdit,
   onOpenMap,
   onOpenDarwinCoreModal,
+  onDelete,
+  onUpdateBioacoustics,
 }) => {
   const [isZoomed, setIsZoomed] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioPlaybackController, setAudioPlaybackController] = useState<SoundPlaybackController | null>(null);
   const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; label: string; desc: string } | null>(null);
+  const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [waveformHeights, setWaveformHeights] = useState<number[]>([
     8, 16, 28, 20, 12, 32, 24, 12, 8, 20, 28, 16, 8, 24, 12, 8,
   ]);
@@ -35,31 +46,50 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
   // Audio Playback toggle
   const toggleAudio = () => {
+    if (!specimen.bioacoustics) return;
+
     if (isPlayingAudio) {
       audioPlaybackController?.stop();
       setIsPlayingAudio(false);
       setAudioPlaybackController(null);
     } else {
       setIsPlayingAudio(true);
-      const controller = playFrogCall(
-        (spectrum) => {
-          if (spectrum.length > 0) {
-            setWaveformHeights(
-              spectrum.map((val) => Math.max(6, Math.floor(val * 32) + Math.floor(Math.random() * 8)))
-            );
-          }
-        },
-        () => {
-          setIsPlayingAudio(false);
-          setAudioPlaybackController(null);
+
+      const onTick = (spectrum: number[]) => {
+        if (spectrum.length > 0) {
+          setWaveformHeights(
+            spectrum.map((val) => Math.max(6, Math.floor(val * 32) + Math.floor(Math.random() * 8)))
+          );
         }
-      );
+      };
+
+      const onEnd = () => {
+        setIsPlayingAudio(false);
+        setAudioPlaybackController(null);
+      };
+
+      let controller: SoundPlaybackController;
+      if (specimen.bioacoustics.audioDataUrl) {
+        controller = playCustomAudio(specimen.bioacoustics.audioDataUrl, onTick, onEnd);
+      } else {
+        controller = playFrogCall(onTick, onEnd);
+      }
+
       setAudioPlaybackController(controller);
     }
   };
 
+  // Suppress bioacoustics for silent organisms
+  const handleSuppressBioacoustics = () => {
+    if (window.confirm('¿Desea suprimir el módulo de audio para este espécimen (marcarlo como organismo sin canto/llamado)?')) {
+      audioPlaybackController?.stop();
+      setIsPlayingAudio(false);
+      onUpdateBioacoustics(specimen.id, undefined);
+    }
+  };
+
   return (
-    <div className="flex flex-col w-full min-h-screen bg-[#f8faf4] pb-12">
+    <div className="flex flex-col w-full min-h-screen bg-[#f8faf4] pb-20">
       {/* Top Fixed Header */}
       <header className="sticky top-0 inset-x-0 z-50 bg-[#f8faf4]/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
         <div className="h-16 px-4 flex items-center justify-between gap-2 max-w-3xl mx-auto w-full">
@@ -79,6 +109,14 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Quick Delete Header Button */}
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-9 h-9 rounded-full bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors cursor-pointer"
+              title="Eliminar este registro"
+            >
+              <span className="material-symbols-outlined text-[20px]">delete</span>
+            </button>
             <div
               className="w-8 h-8 rounded-full bg-[#002217] flex items-center justify-center flex-shrink-0 text-white cursor-pointer"
               title="Curador: Biol. M. Cordero (UCR-MZ)"
@@ -131,19 +169,22 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                   {isZoomed ? 'zoom_out' : 'zoom_in'}
                 </span>
               </button>
-              <button
-                aria-label="Reproducir vocalización bioacústica"
-                onClick={toggleAudio}
-                className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer ${
-                  isPlayingAudio
-                    ? 'bg-[#6cf8bb] text-[#00714d] ring-2 ring-[#006c49]'
-                    : 'bg-[#006c49] text-white hover:bg-[#005236]'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[20px]">
-                  {isPlayingAudio ? 'pause' : 'volume_up'}
-                </span>
-              </button>
+
+              {specimen.bioacoustics && (
+                <button
+                  aria-label="Reproducir vocalización bioacústica"
+                  onClick={toggleAudio}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer ${
+                    isPlayingAudio
+                      ? 'bg-[#6cf8bb] text-[#00714d] ring-2 ring-[#006c49]'
+                      : 'bg-[#006c49] text-white hover:bg-[#005236]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    {isPlayingAudio ? 'pause' : 'volume_up'}
+                  </span>
+                </button>
+              )}
             </div>
 
             {/* Image Metadata Stamp */}
@@ -182,7 +223,6 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
           {/* Conservation & Biogeographic Status Mosaic */}
           <div className="grid grid-cols-2 gap-2 mt-4">
-            {/* UICN Card */}
             <div className="p-3 rounded-xl bg-[#f2f4ee] shadow-sm flex flex-col justify-between border border-[#e1e3dd]/60">
               <span className="font-mono text-[11px] text-[#414844] uppercase tracking-wider font-semibold">
                 Estado UICN
@@ -202,7 +242,6 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               </div>
             </div>
 
-            {/* CITES & Endemism Card */}
             <div className="p-3 rounded-xl bg-[#f2f4ee] shadow-sm flex flex-col justify-between border border-[#e1e3dd]/60">
               <span className="font-mono text-[11px] text-[#414844] uppercase tracking-wider font-semibold">
                 CITES / Distribución
@@ -233,7 +272,6 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 </span>
               )}
             </div>
-            {/* Linear Flow Breadcrumb Structure */}
             <div className="flex items-center flex-wrap gap-1.5 font-mono text-[11px] text-[#191c19]">
               <span className="px-2 py-0.5 rounded bg-white shadow-sm">{specimen.taxonomy.kingdom}</span>
               <span className="text-[#c1c8c3] font-bold">&gt;</span>
@@ -252,8 +290,8 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
           </div>
         </section>
 
-        {/* Bioacoustic Waveform Interactive Playback Module */}
-        {specimen.bioacoustics && (
+        {/* BIOACOUSTIC MODULE (ACTIVE OR SUPPRESSED) */}
+        {specimen.bioacoustics ? (
           <section className="px-4 mt-4">
             <div className="p-3.5 rounded-xl bg-[#0f382a] text-white shadow-sm flex flex-col gap-2.5">
               <div className="flex items-center justify-between">
@@ -275,9 +313,12 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-[#002217] text-[#6ffbbe] font-semibold">
-                  {isPlayingAudio ? '00:08 / 00:24' : '00:00 / 00:24'}
-                </span>
+
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-[#002217] text-[#6ffbbe] font-semibold">
+                    {isPlayingAudio ? '00:08 / 00:24' : '00:00 / 00:24'}
+                  </span>
+                </div>
               </div>
 
               {/* Dynamic Sound Wave Display */}
@@ -308,6 +349,49 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                   <span>Sonograma .WAV</span>
                 </button>
               </div>
+
+              {/* Bioacoustic Actions (Grabar, Subir o Suprimir) */}
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
+                <button
+                  onClick={() => setIsAudioModalOpen(true)}
+                  className="text-[#6cf8bb] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+                >
+                  <span className="material-symbols-outlined text-[15px]">mic</span>
+                  <span>{specimen.bioacoustics.audioDataUrl ? 'Cambiar Grabación' : 'Grabar / Subir Audio'}</span>
+                </button>
+
+                {/* BOTÓN PARA SUPRIMIR CANTO POR DEFECTO */}
+                <button
+                  onClick={handleSuppressBioacoustics}
+                  className="text-red-300 hover:text-red-100 flex items-center gap-1 cursor-pointer"
+                  title="Suprimir módulo si el organismo no posee canto o llamado"
+                >
+                  <span className="material-symbols-outlined text-[14px]">volume_off</span>
+                  <span>Suprimir Canto (Organismo mudo)</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : (
+          /* Silent Organism Card with option to add audio */
+          <section className="px-4 mt-4">
+            <div className="p-3.5 rounded-xl bg-white border border-[#e1e3dd] shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#717974] text-[20px]">volume_off</span>
+                <div>
+                  <h4 className="font-bold text-xs text-[#002217]">Sin Registro Bioacústico</h4>
+                  <p className="text-[11px] text-[#414844]">
+                    Organismo sin vocalizaciones asignadas (mudo).
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAudioModalOpen(true)}
+                className="px-3 py-1.5 rounded-lg bg-[#002217] hover:bg-[#0f382a] text-white text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[15px] text-[#6cf8bb]">mic</span>
+                <span>Grabar o Subir Audio</span>
+              </button>
             </div>
           </section>
         )}
@@ -326,7 +410,6 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               </span>
             </div>
 
-            {/* Static/Interactive Map Integration Pill */}
             <div
               onClick={() => onOpenMap(specimen)}
               title="Haga clic para abrir el Mapa Científico de Costa Rica centrado en este espécimen"
@@ -337,13 +420,11 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
             >
               <div className="absolute inset-0 bg-[#002217]/25 group-hover:bg-[#002217]/10 transition-colors" />
 
-              {/* Hover Badge */}
               <div className="absolute top-2.5 right-2.5 bg-[#002217]/80 text-white px-2 py-1 rounded text-[11px] font-mono flex items-center gap-1 group-hover:bg-[#002217] transition-colors">
                 <span className="material-symbols-outlined text-[14px] text-[#6cf8bb]">zoom_in</span>
                 <span>Explorar en Mapa</span>
               </div>
 
-              {/* Live Map Floating Pill */}
               <div className="relative z-10 w-full p-2 rounded bg-white/95 backdrop-blur-md shadow-sm flex items-center justify-between">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="material-symbols-outlined text-red-600 text-[18px]">location_on</span>
@@ -357,7 +438,6 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               </div>
             </div>
 
-            {/* Habitat Environmental Metadata Grid */}
             <div className="grid grid-cols-2 gap-2 text-[#191c19] pt-1">
               <div className="p-2.5 rounded-lg bg-[#f2f4ee] flex flex-col">
                 <span className="font-mono text-[11px] text-[#414844] flex items-center gap-1">
@@ -420,7 +500,6 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               </span>
             </div>
 
-            {/* Tabular Morphometrics */}
             <div className="p-3 rounded-lg bg-[#f2f4ee] flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] text-[#414844] font-medium">
@@ -436,18 +515,55 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               </p>
             </div>
 
-            {/* Behavioral Ecology */}
             <div className="p-3 rounded-lg bg-[#f2f4ee] flex flex-col gap-1.5">
               <div className="flex items-center gap-1.5 text-[#002217]">
                 <span className="material-symbols-outlined text-[18px]">psychology_alt</span>
-                <span className="font-bold text-[14px]">Etología y Reproducción</span>
+                <span className="font-bold text-[14px]">Etología y Comportamiento</span>
               </div>
               <p className="text-[13px] text-[#191c19] leading-relaxed">
                 {specimen.morphometrics.ethologyAndReproduction}
               </p>
             </div>
 
-            {/* Sympatric Species Observation */}
+            {/* Cortejo y Reproducción */}
+            {specimen.morphometrics.courtshipAndMating && (
+              <div className="p-3 rounded-lg bg-[#f2f4ee] flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5 text-[#002217]">
+                  <span className="material-symbols-outlined text-[18px] text-[#006c49]">favorite</span>
+                  <span className="font-bold text-[14px]">Cortejo, Reproducción &amp; Desove</span>
+                </div>
+                <p className="text-[13px] text-[#191c19] leading-relaxed">
+                  {specimen.morphometrics.courtshipAndMating}
+                </p>
+              </div>
+            )}
+
+            {/* Relaciones Intra e Interespecíficas */}
+            {specimen.morphometrics.interspecificRelations && (
+              <div className="p-3 rounded-lg bg-[#f2f4ee] flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5 text-[#002217]">
+                  <span className="material-symbols-outlined text-[18px] text-[#006c49]">shield</span>
+                  <span className="font-bold text-[14px]">Relaciones Intra/Interespecíficas, Depredación &amp; Defensas</span>
+                </div>
+                <p className="text-[13px] text-[#191c19] leading-relaxed">
+                  {specimen.morphometrics.interspecificRelations}
+                </p>
+              </div>
+            )}
+
+            {/* Datos Científicos Confirmados (UCR, OET, SINAC) */}
+            {specimen.morphometrics.confirmedScientificData && (
+              <div className="p-3 rounded-lg bg-[#c1ecd7]/30 border border-[#006c49]/30 flex flex-col gap-1.5">
+                <div className="flex items-center gap-1.5 text-[#002116]">
+                  <span className="material-symbols-outlined text-[18px] text-[#006c49]">verified</span>
+                  <span className="font-bold text-[14px]">Investigación Científica Confirmada (UCR / OET / SINAC)</span>
+                </div>
+                <p className="text-[13px] text-[#191c19] leading-relaxed font-normal">
+                  {specimen.morphometrics.confirmedScientificData}
+                </p>
+              </div>
+            )}
+
             {specimen.morphometrics.sympatricSpecies.length > 0 && (
               <div className="p-3 rounded-lg bg-[#f2f4ee] flex flex-col gap-2">
                 <div className="flex items-center gap-1.5 text-[#002217]">
@@ -518,6 +634,67 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
           </section>
         )}
 
+        {/* Registro de Avistamientos / Entradas de Vistas */}
+        <section className="px-4 mt-4">
+          <div className="p-4 rounded-xl bg-white shadow-sm flex flex-col gap-3 border border-[#e1e3dd]/80">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-[16px] text-[#002217] flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[#006c49] text-[20px]">visibility</span>
+                Historial de Avistamientos &amp; Entradas de Vistas ({specimen.sightings?.length || 1})
+              </h3>
+              <button
+                onClick={() => onEdit(specimen)}
+                className="text-xs text-[#006c49] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                <span>+ Nuevo Avistamiento</span>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {specimen.sightings && specimen.sightings.length > 0 ? (
+                specimen.sightings.map((sight) => (
+                  <div
+                    key={sight.id}
+                    className="p-3 rounded-lg bg-[#f2f4ee] border border-[#e1e3dd] flex flex-col gap-1 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#002217] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] text-[#006c49]">pin_drop</span>
+                        {sight.locality}
+                      </span>
+                      <span className="font-mono text-[10px] text-[#006c49] font-bold bg-white px-2 py-0.5 rounded border border-[#e1e3dd]">
+                        N={sight.count} ind. • {sight.timestamp}
+                      </span>
+                    </div>
+                    <p className="text-[#191c19] mt-0.5">{sight.behaviorObserved}</p>
+                    {sight.microhabitat && (
+                      <span className="text-[11px] text-[#414844]">
+                        Hábitat: {sight.microhabitat} {sight.weather ? `• ${sight.weather}` : ''}
+                      </span>
+                    )}
+                    {sight.notes && (
+                      <p className="text-[11px] text-[#717974] italic mt-0.5 border-t border-[#e1e3dd] pt-1">
+                        Nota: {sight.notes}
+                      </p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="p-3 rounded-lg bg-[#f2f4ee] text-xs text-[#414844] flex items-center justify-between">
+                  <span>Primer avistamiento de colecta registrado ({specimen.collectionDate}).</span>
+                  <button
+                    onClick={() => onEdit(specimen)}
+                    className="text-[#006c49] font-bold hover:underline"
+                  >
+                    Añadir nuevo
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
         {/* Primary & Secondary Action Commands */}
         <section className="px-4 mt-6 flex flex-col gap-2.5">
           {/* AI Assistance Action Button */}
@@ -555,8 +732,63 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               <span>Ver en Mapa Global</span>
             </button>
           </div>
+
+          {/* THE REQUESTED DELETE BUTTON */}
+          <div className="pt-2">
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full h-11 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-[13px] flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              <span>Eliminar Registro Científico</span>
+            </button>
+          </div>
         </section>
       </div>
+
+      {/* Audio Recording / Upload Modal */}
+      <AudioRecordingModal
+        isOpen={isAudioModalOpen}
+        onClose={() => setIsAudioModalOpen(false)}
+        initialBioacoustics={specimen.bioacoustics}
+        onSave={(bio) => onUpdateBioacoustics(specimen.id, bio)}
+      />
+
+      {/* Delete Confirmation Alert Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-sm w-full bg-white rounded-2xl p-5 shadow-2xl flex flex-col gap-3">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">delete_forever</span>
+            </div>
+            <h4 className="font-bold text-center text-[#002217] text-base">
+              ¿Eliminar este registro científico?
+            </h4>
+            <p className="text-xs text-center text-[#414844]">
+              Se eliminará definitivamente la ficha de <strong className="italic">{specimen.scientificName}</strong> ({specimen.catalogNumber}). Esta acción no se puede deshacer.
+            </p>
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="py-2.5 px-3 rounded-xl border border-[#c1c8c3] text-xs font-bold text-[#414844] hover:bg-[#f2f4ee] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  onDelete(specimen.id);
+                }}
+                className="py-2.5 px-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
+              >
+                Sí, Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox / High-Res Photo Modal */}
       {activePhotoModal && (

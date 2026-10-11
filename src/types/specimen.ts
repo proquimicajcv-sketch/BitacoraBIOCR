@@ -39,6 +39,9 @@ export interface Morphometrics {
   weightGrams?: number;
   colorationAndAnatomy: string;
   ethologyAndReproduction: string;
+  courtshipAndMating?: string; // Cortejo, rituales nupciales y selección sexual
+  interspecificRelations?: string; // Relaciones intra/interespecíficas, territorialidad, depredación, defensas/toxinas
+  confirmedScientificData?: string; // Datos de investigación científica confirmada (UCR/OET/SINAC/literatura)
   sympatricSpecies: SympatricSpecies[];
 }
 
@@ -49,6 +52,7 @@ export interface BioacousticRecord {
   durationSeconds: number;
   audioPatternDescription: string;
   audioFileUrl?: string;
+  audioDataUrl?: string; // Base64 data URL for recorded microphone audio or uploaded MP3/WAV
 }
 
 export interface PhotoRecord {
@@ -56,6 +60,22 @@ export interface PhotoRecord {
   url: string;
   label: string;
   description: string;
+}
+
+export interface SightingEntry {
+  id: string;
+  timestamp: string; // e.g. 2026-10-10 21:15 CST
+  date: string;
+  observer: string;
+  locality: string;
+  coordinates?: string;
+  count: number;
+  microhabitat?: string;
+  weather?: string;
+  temperatureC?: number;
+  behaviorObserved: string;
+  photoUrls?: string[];
+  notes?: string;
 }
 
 export interface SpecimenRecord {
@@ -89,6 +109,7 @@ export interface SpecimenRecord {
   georeference: Georeference;
   morphometrics: Morphometrics;
   additionalPhotos: PhotoRecord[];
+  sightings?: SightingEntry[];
   fieldFolio: string;
   notes?: string;
 }

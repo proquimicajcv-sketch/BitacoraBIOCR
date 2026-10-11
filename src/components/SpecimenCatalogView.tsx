@@ -7,6 +7,8 @@ interface SpecimenCatalogViewProps {
   onOpenNew: () => void;
   onOpenMap: () => void;
   onOpenDarwinCore: () => void;
+  onOpenSyncBackup?: () => void;
+  onDeleteSpecimen?: (id: string) => void;
 }
 
 export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
@@ -15,6 +17,8 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
   onOpenNew,
   onOpenMap,
   onOpenDarwinCore,
+  onOpenSyncBackup,
+  onDeleteSpecimen,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL');
@@ -85,7 +89,17 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            {onOpenSyncBackup && (
+              <button
+                onClick={onOpenSyncBackup}
+                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 border border-[#6cf8bb]/30 transition-all cursor-pointer"
+                title="Copia de seguridad en JSON y sincronización"
+              >
+                <span className="material-symbols-outlined text-[16px]">sync_saved_locally</span>
+                <span>Respaldo JSON / Nube</span>
+              </button>
+            )}
             <button
               onClick={onOpenDarwinCore}
               className="px-3 py-2 rounded-xl bg-[#002217] hover:bg-black text-[#c1ecd7] text-xs font-mono font-bold flex items-center gap-1.5 border border-[#6cf8bb]/30 transition-all cursor-pointer"
@@ -215,10 +229,27 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
                     <span className="truncate">{specimen.iucnStatus.label}</span>
                   </span>
 
-                  <span className="text-[#006c49] font-bold text-xs flex items-center gap-0.5 group-hover:translate-x-1 transition-transform">
-                    <span>Ver Ficha</span>
-                    <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {onDeleteSpecimen && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`¿Eliminar la ficha de ${specimen.scientificName} (${specimen.catalogNumber})?`)) {
+                            onDeleteSpecimen(specimen.id);
+                          }
+                        }}
+                        className="p-1 text-[#717974] hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                        title="Eliminar este registro"
+                      >
+                        <span className="material-symbols-outlined text-[17px]">delete</span>
+                      </button>
+                    )}
+                    <span className="text-[#006c49] font-bold text-xs flex items-center gap-0.5 group-hover:translate-x-1 transition-transform">
+                      <span>Ver Ficha</span>
+                      <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

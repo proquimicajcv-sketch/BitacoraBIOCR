@@ -148,6 +148,152 @@ export const COSTA_RICA_HOTSPOTS: CostaRicaHotspot[] = [
   },
 ];
 
+export interface HoldridgeLifeZone {
+  code: string;
+  name: string;
+  altitudinalBelt: string;
+  elevationRange: string;
+  typicalRegions: string;
+}
+
+export const HOLDRIDGE_LIFE_ZONES_CR: HoldridgeLifeZone[] = [
+  {
+    code: 'bmh-T',
+    name: 'Bosque Muy Húmedo Tropical (bmh-T)',
+    altitudinalBelt: 'Basal (Tierras Bajas)',
+    elevationRange: '0 - 700 msnm',
+    typicalRegions: 'Sarapiquí, Tortuguero, Península de Osa, Golfo Dulce, Caribe Sur',
+  },
+  {
+    code: 'bh-T',
+    name: 'Bosque Húmedo Tropical (bh-T)',
+    altitudinalBelt: 'Basal (Tierras Bajas)',
+    elevationRange: '0 - 600 msnm',
+    typicalRegions: 'Pacífico Central, Quepos, Manuel Antonio, Dominical, Carara',
+  },
+  {
+    code: 'bs-T',
+    name: 'Bosque Seco Tropical (bs-T)',
+    altitudinalBelt: 'Basal (Tierras Bajas)',
+    elevationRange: '0 - 700 msnm',
+    typicalRegions: 'Guanacaste, Península de Nicoya, Cuenca del Tempisque, Santa Rosa, Palo Verde',
+  },
+  {
+    code: 'bp-T',
+    name: 'Bosque Pluvial Tropical (bp-T)',
+    altitudinalBelt: 'Basal (Tierras Bajas)',
+    elevationRange: '0 - 700 msnm',
+    typicalRegions: 'Faldas orientales del Caribe de altísima precipitación (>5000 mm anuales)',
+  },
+  {
+    code: 'bh-P',
+    name: 'Bosque Húmedo Premontano (bh-P)',
+    altitudinalBelt: 'Premontano',
+    elevationRange: '700 - 1400 msnm',
+    typicalRegions: 'Valle Central (San José, Heredia, Alajuela, Atenas)',
+  },
+  {
+    code: 'bmh-P',
+    name: 'Bosque Muy Húmedo Premontano (bmh-P)',
+    altitudinalBelt: 'Premontano',
+    elevationRange: '700 - 1400 msnm',
+    typicalRegions: 'Turrialba, San Vito de Coto Brus, Puriscal, Ciudad Quesada',
+  },
+  {
+    code: 'bp-P',
+    name: 'Bosque Pluvial Premontano / Bosque Nuboso (bp-P)',
+    altitudinalBelt: 'Premontano',
+    elevationRange: '700 - 1500 msnm',
+    typicalRegions: 'Monteverde, Reserva Biológica Alberto Manuel Brenes (San Ramón), Bajos del Toro',
+  },
+  {
+    code: 'bh-MB',
+    name: 'Bosque Húmedo Montano Bajo (bh-MB)',
+    altitudinalBelt: 'Montano Bajo',
+    elevationRange: '1400 - 2400 msnm',
+    typicalRegions: 'Valle de El Guarco, Cartago, Ochomogo',
+  },
+  {
+    code: 'bmh-MB',
+    name: 'Bosque Muy Húmedo Montano Bajo (bmh-MB)',
+    altitudinalBelt: 'Montano Bajo',
+    elevationRange: '1400 - 2500 msnm',
+    typicalRegions: 'Faldas medias de Volcanes Poás e Irazú, Tapantí, Vara Blanca',
+  },
+  {
+    code: 'bp-MB',
+    name: 'Bosque Pluvial Montano Bajo (bp-MB)',
+    altitudinalBelt: 'Montano Bajo (Robledales)',
+    elevationRange: '1400 - 2600 msnm',
+    typicalRegions: 'San Gerardo de Dota, Parque Nacional Los Quetzales, Cordillera de Talamanca',
+  },
+  {
+    code: 'bmh-M',
+    name: 'Bosque Muy Húmedo Montano (bmh-M)',
+    altitudinalBelt: 'Montano',
+    elevationRange: '2500 - 3100 msnm',
+    typicalRegions: 'Cumbres volcánicas del Macizo Poás, Barva e Irazú',
+  },
+  {
+    code: 'bp-M',
+    name: 'Bosque Pluvial Montano (bp-M)',
+    altitudinalBelt: 'Montano',
+    elevationRange: '2500 - 3200 msnm',
+    typicalRegions: 'Macizo de la Muerte, Villa Mills, San Gerardo alto',
+  },
+  {
+    code: 'p-SA',
+    name: 'Páramo Subalpino (p-SA)',
+    altitudinalBelt: 'Subalpino',
+    elevationRange: '3000 - 3820 msnm',
+    typicalRegions: 'Cerro Chirripó, Cerro Buena Vista, Cerro Kamuk, Macizo de la Muerte',
+  },
+];
+
+/**
+ * Predicts the Holdridge Life Zone according to elevation and geographical coordinates
+ */
+export function estimateHoldridgeZone(elevation: number, lat: number, lng: number): HoldridgeLifeZone {
+  // Paramo
+  if (elevation >= 3000) {
+    return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'p-SA')!;
+  }
+  // Montano
+  if (elevation >= 2500) {
+    return lng < -83.8
+      ? HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bmh-M')!
+      : HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bp-M')!;
+  }
+  // Montano Bajo
+  if (elevation >= 1400) {
+    if (lat < 9.7 && lng > -83.9) {
+      return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bp-MB')!; // Talamanca / Dota
+    }
+    return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bmh-MB')!;
+  }
+  // Premontano
+  if (elevation >= 700) {
+    if (lat > 10.1 && lng < -84.6) {
+      return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bp-P')!; // Monteverde / Tilarán
+    }
+    if (lng > -84.2 && lng < -83.9 && lat > 9.8 && lat < 10.05) {
+      return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bh-P')!; // Central Valley
+    }
+    return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bmh-P')!;
+  }
+  // Basal / Lowlands
+  // Northwest Pacific (Guanacaste) is dry
+  if (lat > 10.0 && lng < -85.0) {
+    return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bs-T')!; // Guanacaste Dry Forest
+  }
+  // Central Pacific transition
+  if (lat < 10.0 && lat > 9.2 && lng < -84.0 && lng > -85.0) {
+    return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bh-T')!; // Manuel Antonio / Carara
+  }
+  // Caribbean & Osa very humid
+  return HOLDRIDGE_LIFE_ZONES_CR.find((z) => z.code === 'bmh-T')!;
+}
+
 /**
  * Converts decimal coordinates to scientific Degrees Minutes Seconds (DMS) string
  */

@@ -137,6 +137,79 @@ export function playFrogCall(
 }
 
 /**
+ * Plays user-uploaded or recorded audio with real-time waveform frequency analysis
+ */
+export function playCustomAudio(
+  audioUrl: string,
+  onTick?: (frequencyData: number[]) => void,
+  onEnd?: () => void
+): SoundPlaybackController {
+  const audio = new Audio(audioUrl);
+  let animId: number;
+  let isPlaying = true;
+
+  try {
+    const ctx = getAudioContext();
+    const source = ctx.createMediaElementSource(audio);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 64;
+
+    source.connect(analyser);
+    analyser.connect(ctx.destination);
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    const updateSpectrum = () => {
+      if (!isPlaying) return;
+      analyser.getByteFrequencyData(dataArray);
+      const normalized = Array.from(dataArray.slice(0, 16)).map((v) => v / 255);
+      onTick?.(normalized);
+      animId = requestAnimationFrame(updateSpectrum);
+    };
+
+    audio.onplay = () => {
+      animId = requestAnimationFrame(updateSpectrum);
+    };
+
+    audio.onended = () => {
+      isPlaying = false;
+      cancelAnimationFrame(animId);
+      onEnd?.();
+    };
+
+    audio.onerror = () => {
+      isPlaying = false;
+      cancelAnimationFrame(animId);
+      onEnd?.();
+    };
+
+    audio.play().catch((err) => {
+      console.warn('Audio playback error:', err);
+      onEnd?.();
+    });
+
+    return {
+      stop: () => {
+        isPlaying = false;
+        cancelAnimationFrame(animId);
+        audio.pause();
+        audio.currentTime = 0;
+      },
+    };
+  } catch (err) {
+    console.warn('Fallback to standard audio element:', err);
+    audio.play().catch(() => onEnd?.());
+    audio.onended = () => onEnd?.();
+    return {
+      stop: () => {
+        audio.pause();
+        onEnd?.();
+      },
+    };
+  }
+}
+
+/**
  * Creates and downloads a client-generated WAV sonogram audio file
  */
 export function generateSonogramWav(filename = 'CR-BIO-Agalychnis-callidryas.wav') {
