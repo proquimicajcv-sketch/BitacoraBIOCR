@@ -98,10 +98,14 @@ export default function App() {
                   return dateB.localeCompare(dateA);
                 });
 
+                const existingPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
+                  ? item.additionalPhotos
+                  : INITIAL_SPECIMENS[0].additionalPhotos;
+
                 return {
                   ...item,
                   heroImage: '/isthmohyla_nacientes.jpg',
-                  additionalPhotos: INITIAL_SPECIMENS[0].additionalPhotos,
+                  additionalPhotos: existingPhotos,
                   sightings: mergedSightings,
                   morphometrics: {
                     ...item.morphometrics,
@@ -196,10 +200,14 @@ export default function App() {
                   return dateB.localeCompare(dateA);
                 });
 
+                const existingPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
+                  ? item.additionalPhotos
+                  : INITIAL_SPECIMENS[0].additionalPhotos;
+
                 return {
                   ...item,
                   heroImage: '/isthmohyla_nacientes.jpg',
-                  additionalPhotos: INITIAL_SPECIMENS[0].additionalPhotos,
+                  additionalPhotos: existingPhotos,
                   sightings: mergedSightings,
                   morphometrics: {
                     ...item.morphometrics,
