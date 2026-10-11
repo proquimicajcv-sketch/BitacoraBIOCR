@@ -94,7 +94,7 @@ export const INITIAL_SPECIMENS: SpecimenRecord[] = [
         id: 'photo-3',
         url: '/isthmohyla_nacientes_eye_zoom.jpg',
         label: 'Detalle Ocular',
-        description: 'Macro zoom real del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado característico con reticulación oscura y pupila horizontal adaptada a baja luminosidad.',
+        description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
       },
       {
         id: 'photo-4',
