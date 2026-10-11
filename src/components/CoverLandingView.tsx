@@ -29,19 +29,21 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
   currentSpecimen,
 }) => {
   const coverImageUrl =
-    currentSpecimen?.heroImage ||
-    'https://lh3.googleusercontent.com/aida-public/AB6AXuDvI7_6fTqgfYbPLKbGn0dFeW7hmnuRolqzd7Q_i2tcUFhIQO5UPw2MQBrfoR_PjDM-c7sqT6CdtQVsyoIP_fnDU9RXrw8NvRVtpA7JOiYHRcmwErrYso4uiDIH7IO1HdniMZq4nm1LM36RywajGzBnMXJI6ZBv8MEGSO_anGlnFjpGLL2LtKkDeBkJ6bAZ8qKDSvDv2NczPj54ygoDcje8UU6V8oi7EG7ddl-wRYqrXNZecg1XCf3y';
+    currentSpecimen?.heroImage && !currentSpecimen.heroImage.includes('unsplash.com/photo-1508873696983')
+      ? currentSpecimen.heroImage
+      : '/isthmohyla_nacientes.jpg';
 
   return (
     <div className="relative min-h-[calc(100vh-64px)] w-full flex flex-col justify-between overflow-hidden bg-[#00170f] text-white select-none">
-      {/* Background High-Res Nature Hero Image */}
+      {/* Background High-Res Nature Hero Image - Rana de las Nacientes Emblem */}
       <div
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-1000 transform scale-105"
+        className="absolute inset-0 bg-cover bg-center sm:bg-[center_top_20%] bg-no-repeat transition-all duration-700"
         style={{ backgroundImage: `url('${coverImageUrl}')` }}
       >
-        {/* Multilayer gradient backdrop for maximum typographic contrast and jungle ambiance */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#001a11] via-[#002217]/75 to-[#00140d]/80" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(108,248,187,0.15),transparent_60%)]" />
+        {/* Balanced contrast overlays preserving vivid frog details, bright greens and amber eyes */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#00170f] via-[#001f15]/50 to-[#00170f]/60" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#00170f]/75 via-transparent to-[#00170f]/65" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(0,23,15,0.7)_90%)]" />
       </div>
 
       {/* Top Header / Heraldic Bar */}

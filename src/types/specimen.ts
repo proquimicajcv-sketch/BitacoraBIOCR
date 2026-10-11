@@ -62,6 +62,11 @@ export interface PhotoRecord {
   description: string;
 }
 
+export type VitalityStatus = 'VIVO' | 'MUERTO';
+export type VitalityCause = 'ATROPELLO' | 'DEPREDACION' | 'DESECACION' | 'ENFERMEDAD_HONGOS' | 'CAUSA_DESCONOCIDA' | 'OTRO';
+export type LifeStage = 'HUEVO' | 'LARVA_RENACUAJO' | 'METAMORFO_JUVENIL' | 'SUBADULTO' | 'ADULTO' | 'NO_APLICA';
+export type BiologicalSex = 'MACHO' | 'HEMBRA' | 'INDETERMINADO' | 'NO_APLICA';
+
 export interface SightingEntry {
   id: string;
   timestamp: string; // e.g. 2026-10-10 21:15 CST
@@ -78,6 +83,15 @@ export interface SightingEntry {
   behaviorObserved: string;
   photoUrls?: string[];
   notes?: string;
+  isCuriousFinding?: boolean;
+  curiousFindingTitle?: string;
+  curiousFindingDescription?: string;
+  curiousFindingPhoto?: string;
+  vitalityStatus?: VitalityStatus; // VIVO o MUERTO
+  vitalityCause?: VitalityCause; // e.g. ATROPELLO
+  vitalityCauseDetail?: string; // e.g. Atropello en carretera ruta 32
+  lifeStage?: LifeStage; // Adulto, Renacuajo, Larva, Huevo, etc. o NO_APLICA
+  sex?: BiologicalSex; // Macho, Hembra, Indeterminado o NO_APLICA
 }
 
 export interface SpecimenRecord {

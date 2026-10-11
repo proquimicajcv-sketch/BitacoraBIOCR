@@ -11,6 +11,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
+app.use(express.static(path.resolve('public')));
 
 // Initialize GoogleGenAI with mandatory telemetry header
 const ai = new GoogleGenAI({
@@ -115,6 +116,32 @@ app.post('/api/database/specimens', (req: Request, res: Response): void => {
     });
   } catch (err: any) {
     console.error('Error writing database file:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint to upload and persist photos locally in public folder
+const UPLOADS_DIR = path.resolve('public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+app.post('/api/upload-photo', (req: Request, res: Response): void => {
+  try {
+    const { base64Data, filename } = req.body;
+    if (!base64Data) {
+      res.status(400).json({ success: false, error: 'No se envió imagen' });
+      return;
+    }
+    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    const safeName = (filename || `photo_${Date.now()}.jpg`).replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const targetPath = path.join(UPLOADS_DIR, safeName);
+    fs.writeFileSync(targetPath, buffer);
+    const publicUrl = `/uploads/${safeName}`;
+    res.json({ success: true, url: publicUrl });
+  } catch (err: any) {
+    console.error('Error uploading photo:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

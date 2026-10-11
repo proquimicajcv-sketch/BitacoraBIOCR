@@ -64,26 +64,64 @@ export default function App() {
       if (saved) {
         let parsed: SpecimenRecord[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Seamlessly upgrade Agalychnis sample to Isthmohyla nacientes if present
-          parsed = parsed.map((item) =>
-            item.scientificName === 'Agalychnis callidryas' || item.id === 'cr-bio-2024-8842'
-              ? INITIAL_SPECIMENS[0]
-              : item
+          // Keep ONLY user-created specimens and Isthmohyla nacientes; purge old demo specimens
+          const demoIdsToPurge = new Set([
+            'cr-bio-2024-9104', // Oophaga pumilio
+            'cr-bio-2024-7731', // Pharomachrus mocinno
+            'cr-bio-2024-6420', // Morpho peleides
+            'cr-bio-2025-0199', // Tapirus bairdii
+            'cr-bio-2025-0312', // Bothriechis schlegelii
+            'cr-bio-2025-0455', // Guarianthe skinneri
+            'cr-bio-2024-8842', // Agalychnis old
+          ]);
+
+          let filtered = parsed
+            .filter((item) => !demoIdsToPurge.has(item.id))
+            .map((item) => {
+              if (item.scientificName === 'Agalychnis callidryas') {
+                return INITIAL_SPECIMENS[0];
+              }
+              if (
+                item.scientificName === 'Isthmohyla nacientes' ||
+                item.id === INITIAL_SPECIMENS[0].id
+              ) {
+                const existingSightings = item.sightings || [];
+                const dotaSightExists = existingSightings.some((s) => s.id === 'sight-dota-20261009');
+                let mergedSightings = dotaSightExists
+                  ? existingSightings
+                  : [INITIAL_SPECIMENS[0].sightings![0], ...existingSightings];
+
+                // Auto-sort chronologically by date descending (most recent visit first)
+                mergedSightings = [...mergedSightings].sort((a, b) => {
+                  const dateA = a.date || a.timestamp || '';
+                  const dateB = b.date || b.timestamp || '';
+                  return dateB.localeCompare(dateA);
+                });
+
+                return {
+                  ...item,
+                  heroImage: '/isthmohyla_nacientes.jpg',
+                  additionalPhotos: INITIAL_SPECIMENS[0].additionalPhotos,
+                  sightings: mergedSightings,
+                  morphometrics: {
+                    ...item.morphometrics,
+                    courtshipAndMating: INITIAL_SPECIMENS[0].morphometrics.courtshipAndMating,
+                  },
+                };
+              }
+              return item;
+            });
+
+          // Ensure Isthmohyla nacientes is present as the primary record
+          const hasNacientes = filtered.some(
+            (s) => s.scientificName === 'Isthmohyla nacientes' || s.id === INITIAL_SPECIMENS[0].id
           );
-          return parsed;
-        }
-      }
-      // Backward compatibility check with v1
-      const oldSaved = localStorage.getItem('biobitacora_cr_specimens');
-      if (oldSaved) {
-        let parsed: SpecimenRecord[] = JSON.parse(oldSaved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          parsed = parsed.map((item) =>
-            item.scientificName === 'Agalychnis callidryas' || item.id === 'cr-bio-2024-8842'
-              ? INITIAL_SPECIMENS[0]
-              : item
-          );
-          return parsed;
+          if (!hasNacientes) {
+            filtered = [INITIAL_SPECIMENS[0], ...filtered];
+          }
+
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+          return filtered;
         }
       }
     } catch {
@@ -140,12 +178,43 @@ export default function App() {
         if (data.success && data.deviceId === deviceId && Array.isArray(data.data) && data.data.length > 0) {
           const serverTimestamp = Number(data.lastModified || '0');
           if (!hasLocalChanges || serverTimestamp > localTimestamp) {
-            setSpecimens(data.data);
-            if (data.data.length > 0) {
-              setCurrentSpecimen(data.data[0]);
+            const sanitized = data.data.map((item: SpecimenRecord) => {
+              if (
+                item.scientificName === 'Isthmohyla nacientes' ||
+                item.id === INITIAL_SPECIMENS[0].id
+              ) {
+                const existingSightings = item.sightings || [];
+                const dotaSightExists = existingSightings.some((s) => s.id === 'sight-dota-20261009');
+                let mergedSightings = dotaSightExists
+                  ? existingSightings
+                  : [INITIAL_SPECIMENS[0].sightings![0], ...existingSightings];
+
+                // Auto-sort chronologically by date descending
+                mergedSightings = [...mergedSightings].sort((a, b) => {
+                  const dateA = a.date || a.timestamp || '';
+                  const dateB = b.date || b.timestamp || '';
+                  return dateB.localeCompare(dateA);
+                });
+
+                return {
+                  ...item,
+                  heroImage: '/isthmohyla_nacientes.jpg',
+                  additionalPhotos: INITIAL_SPECIMENS[0].additionalPhotos,
+                  sightings: mergedSightings,
+                  morphometrics: {
+                    ...item.morphometrics,
+                    courtshipAndMating: INITIAL_SPECIMENS[0].morphometrics.courtshipAndMating,
+                  },
+                };
+              }
+              return item;
+            });
+            setSpecimens(sanitized);
+            if (sanitized.length > 0) {
+              setCurrentSpecimen(sanitized[0]);
             }
             try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(data.data));
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
               if (serverTimestamp) {
                 localStorage.setItem(TIMESTAMP_KEY, String(serverTimestamp));
               }

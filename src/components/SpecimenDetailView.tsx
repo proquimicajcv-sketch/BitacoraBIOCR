@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { SpecimenRecord, BioacousticRecord } from '../types/specimen';
+import {
+  SpecimenRecord,
+  BioacousticRecord,
+  SightingEntry,
+  VitalityStatus,
+  VitalityCause,
+  LifeStage,
+  BiologicalSex,
+} from '../types/specimen';
 import {
   playFrogCall,
   playCustomAudio,
@@ -43,11 +51,15 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioPlaybackController, setAudioPlaybackController] = useState<SoundPlaybackController | null>(null);
   const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; label: string; desc: string } | null>(null);
+  const [editingPhoto, setEditingPhoto] = useState<{ id: string; label: string; url: string; description: string } | null>(null);
+  const [editPhotoUrl, setEditPhotoUrl] = useState('');
+  const [editPhotoDesc, setEditPhotoDesc] = useState('');
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Direct Sighting Modal State
   const [isAddSightingModalOpen, setIsAddSightingModalOpen] = useState(false);
+  const [editingSightingId, setEditingSightingId] = useState<string | null>(null);
   const [isChangePhotoModalOpen, setIsChangePhotoModalOpen] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState(specimen.heroImage);
   const [newPhotoDescription, setNewPhotoDescription] = useState(specimen.heroImageDescription);
@@ -76,6 +88,15 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   const [sightingMicrohabitat, setSightingMicrohabitat] = useState(specimen.georeference.microhabitat || '');
   const [sightingBehavior, setSightingBehavior] = useState('');
   const [sightingNotes, setSightingNotes] = useState('');
+  const [sightingIsCurious, setSightingIsCurious] = useState(false);
+  const [sightingCuriousTitle, setSightingCuriousTitle] = useState('');
+  const [sightingCuriousDesc, setSightingCuriousDesc] = useState('');
+  const [sightingCuriousPhoto, setSightingCuriousPhoto] = useState('');
+  const [sightingVitality, setSightingVitality] = useState<VitalityStatus>('VIVO');
+  const [sightingVitalityCause, setSightingVitalityCause] = useState<VitalityCause>('ATROPELLO');
+  const [sightingVitalityDetail, setSightingVitalityDetail] = useState('');
+  const [sightingLifeStage, setSightingLifeStage] = useState<LifeStage>('ADULTO');
+  const [sightingSex, setSightingSex] = useState<BiologicalSex>('NO_APLICA');
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [waveformHeights, setWaveformHeights] = useState<number[]>([
     8, 16, 28, 20, 12, 32, 24, 12, 8, 20, 28, 16, 8, 24, 12, 8,
@@ -156,6 +177,41 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     setSightingMicrohabitat(specimen.georeference.microhabitat || '');
     setSightingBehavior('');
     setSightingNotes('');
+    setSightingIsCurious(false);
+    setSightingCuriousTitle('');
+    setSightingCuriousDesc('');
+    setSightingCuriousPhoto('');
+    setSightingVitality('VIVO');
+    setSightingVitalityCause('ATROPELLO');
+    setSightingVitalityDetail('');
+    setSightingLifeStage('ADULTO');
+    setSightingSex('NO_APLICA');
+    setEditingSightingId(null);
+    setIsAddSightingModalOpen(true);
+  };
+
+  const handleOpenEditSighting = (sight: SightingEntry) => {
+    setEditingSightingId(sight.id);
+    setSightingObserver(sight.observer || currentObserverName || 'Ing. Jorge Carvajal V.');
+    setSightingLocality(sight.locality || specimen.georeference.locality || '');
+    setSightingDate(sight.date || new Date().toISOString().slice(0, 10));
+    setSightingPrecision('exact');
+    setSightingTime(sight.timestamp?.match(/([0-9]{2}:[0-9]{2})/)?.[1] || '20:00');
+    setSightingCoordsDms(sight.coordinates || `${specimen.georeference.latitudeDMS}, ${specimen.georeference.longitudeDMS}`);
+    setSightingCount(sight.count || sight.individualsCount || 1);
+    setSightingWeather(sight.weather || sight.weatherConditions || '');
+    setSightingMicrohabitat(sight.microhabitat || '');
+    setSightingBehavior(sight.behaviorObserved || '');
+    setSightingNotes(sight.notes || '');
+    setSightingIsCurious(!!(sight.isCuriousFinding || sight.curiousFindingTitle));
+    setSightingCuriousTitle(sight.curiousFindingTitle || '');
+    setSightingCuriousDesc(sight.curiousFindingDescription || '');
+    setSightingCuriousPhoto(sight.curiousFindingPhoto || (sight.photoUrls ? sight.photoUrls[0] : ''));
+    setSightingVitality(sight.vitalityStatus || 'VIVO');
+    setSightingVitalityCause(sight.vitalityCause || 'ATROPELLO');
+    setSightingVitalityDetail(sight.vitalityCauseDetail || '');
+    setSightingLifeStage(sight.lifeStage || 'ADULTO');
+    setSightingSex(sight.sex || 'NO_APLICA');
     setIsAddSightingModalOpen(true);
   };
 
@@ -180,14 +236,13 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
       formattedTimestamp = `${monthName} ${year} (Aproximado)`;
     }
 
-    const newSighting = {
-      id: 'sight-' + Date.now(),
+    const sightingPayload: SightingEntry = {
+      id: editingSightingId || 'sight-' + Date.now(),
       timestamp: formattedTimestamp,
       date: recordDate,
       observer: sightingObserver.trim() || currentObserverName || 'Ing. Jorge Carvajal V.',
       locality: sightingLocality.trim() || specimen.georeference.locality,
       coordinates: sightingCoordsDms,
-      lifeZone: sightingLifeZone || specimen.georeference.lifeZone,
       count: Number(sightingCount) || 1,
       individualsCount: Number(sightingCount) || 1,
       microhabitat: sightingMicrohabitat.trim() || specimen.georeference.microhabitat,
@@ -197,12 +252,58 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
       notes: sightingNotes.trim()
         ? `${sightingNotes.trim()}${sightingLifeZone ? ` • Zona: ${sightingLifeZone}` : ''}`
         : (sightingLifeZone ? `Zona de Vida: ${sightingLifeZone}` : undefined),
+      isCuriousFinding: sightingIsCurious,
+      curiousFindingTitle: sightingIsCurious ? sightingCuriousTitle.trim() : undefined,
+      curiousFindingDescription: sightingIsCurious ? sightingCuriousDesc.trim() : undefined,
+      curiousFindingPhoto: sightingIsCurious ? sightingCuriousPhoto : undefined,
+      photoUrls: sightingCuriousPhoto ? [sightingCuriousPhoto] : undefined,
+      vitalityStatus: sightingVitality,
+      vitalityCause: sightingVitality === 'MUERTO' ? sightingVitalityCause : undefined,
+      vitalityCauseDetail: sightingVitality === 'MUERTO' ? sightingVitalityDetail.trim() : undefined,
+      lifeStage: sightingLifeStage,
+      sex: sightingSex,
     };
 
-    const updatedSightings = [newSighting, ...(specimen.sightings || [])];
+    let updatedList: SightingEntry[] = [];
+    if (editingSightingId) {
+      updatedList = (specimen.sightings || []).map((s) =>
+        s.id === editingSightingId ? sightingPayload : s
+      );
+    } else {
+      updatedList = [sightingPayload, ...(specimen.sightings || [])];
+    }
+
+    // Keep all sightings strictly sorted in chronological order of visit (descending)
+    const combinedSightings = updatedList.sort((a, b) => {
+      const dateA = a.date || a.timestamp || '';
+      const dateB = b.date || b.timestamp || '';
+      return dateB.localeCompare(dateA);
+    });
+
+    // Also update additionalPhotos if a curious photo was uploaded/updated
+    let updatedPhotos = [...specimen.additionalPhotos];
+    if (sightingCuriousPhoto) {
+      const existsPhotoIndex = updatedPhotos.findIndex((p) => p.label.toLowerCase().includes('macho tuerto') || p.id === 'photo-4');
+      if (existsPhotoIndex >= 0) {
+        updatedPhotos[existsPhotoIndex] = {
+          ...updatedPhotos[existsPhotoIndex],
+          url: sightingCuriousPhoto,
+          description: sightingCuriousDesc || updatedPhotos[existsPhotoIndex].description,
+        };
+      } else {
+        updatedPhotos.push({
+          id: 'photo-' + Date.now(),
+          url: sightingCuriousPhoto,
+          label: sightingCuriousTitle || 'Hallazgo Curioso',
+          description: sightingCuriousDesc || 'Registro fotográfico de hallazgo curioso en campo.',
+        });
+      }
+    }
+
     const updatedSpecimen: SpecimenRecord = {
       ...specimen,
-      sightings: updatedSightings,
+      sightings: combinedSightings,
+      additionalPhotos: updatedPhotos,
     };
 
     if (onSaveSpecimen) {
@@ -210,7 +311,14 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     }
 
     setIsAddSightingModalOpen(false);
-    setSaveSuccessMsg('¡Nuevo avistamiento registrado con coordenadas y zona de vida Holdridge guardado permanentemente!');
+    setEditingSightingId(null);
+    setSaveSuccessMsg(
+      editingSightingId
+        ? '¡Avistamiento editado y guardado permanentemente!'
+        : sightingIsCurious
+        ? '¡Hallazgo curioso y avistamiento guardados permanentemente y ordenados por fecha!'
+        : '¡Nuevo avistamiento guardado permanentemente y ordenado por fecha de visita!'
+    );
     setTimeout(() => setSaveSuccessMsg(null), 4000);
   };
 
@@ -291,8 +399,12 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
         <section className="relative w-full overflow-hidden bg-[#0f382a] shadow-md">
           <div className="relative w-full h-80 sm:h-96 overflow-hidden">
             <img
-              src={specimen.heroImage}
+              src={specimen.heroImage || '/isthmohyla_nacientes.jpg'}
               alt={specimen.heroImageDescription}
+              onError={(e) => {
+                // If remote photo fails, seamlessly fallback to local authentic photo
+                (e.currentTarget as HTMLImageElement).src = '/isthmohyla_nacientes.jpg';
+              }}
               className={`w-full h-full object-cover transition-transform duration-500 ease-out select-none cursor-pointer ${
                 isZoomed ? 'scale-150' : 'scale-100 hover:scale-105'
               }`}
@@ -779,25 +891,45 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                   {specimen.additionalPhotos.length} Archivos
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {specimen.additionalPhotos.map((photo) => (
                   <div
                     key={photo.id}
-                    onClick={() =>
-                      setActivePhotoModal({
-                        url: photo.url,
-                        label: photo.label,
-                        desc: photo.description,
-                      })
-                    }
-                    className="relative rounded-lg overflow-hidden h-24 group bg-[#e7e9e3] cursor-pointer"
+                    className="relative rounded-lg overflow-hidden h-28 group bg-[#e7e9e3] border border-[#c1c8c3]/40 hover:border-[#006c49] transition-all"
                   >
-                    <img
-                      src={photo.url}
-                      alt={photo.label}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <span className="absolute bottom-1 left-1 px-1 rounded bg-[#002217]/80 text-white font-mono text-[10px]">
+                    <div
+                      onClick={() =>
+                        setActivePhotoModal({
+                          url: photo.url,
+                          label: photo.label,
+                          desc: photo.description,
+                        })
+                      }
+                      className="w-full h-full cursor-pointer"
+                    >
+                      <img
+                        src={photo.url}
+                        alt={photo.label}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+                    </div>
+
+                    {/* Botón para cambiar / sustituir foto */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingPhoto(photo);
+                        setEditPhotoUrl(photo.url);
+                        setEditPhotoDesc(photo.description);
+                      }}
+                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/60 hover:bg-[#006c49] text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer z-10"
+                      title="Sustituir o cambiar esta fotografía"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">edit</span>
+                    </button>
+
+                    <span className="absolute bottom-1.5 left-1.5 right-1.5 px-1.5 py-0.5 rounded bg-[#002217]/90 text-white font-mono text-[10px] truncate block pointer-events-none">
                       {photo.label}
                     </span>
                   </div>
@@ -806,6 +938,119 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
             </div>
           </section>
         )}
+
+        {/* ESPACIO PERMANENTE: HALLAZGOS CURIOSOS DE CAMPO (Ordenados por fecha de visita) */}
+        {(() => {
+          const curiousSightings = (specimen.sightings || [])
+            .filter((s) => s.isCuriousFinding || s.curiousFindingTitle)
+            .sort((a, b) => {
+              const dateA = a.date || a.timestamp || '';
+              const dateB = b.date || b.timestamp || '';
+              return dateB.localeCompare(dateA);
+            });
+
+          if (curiousSightings.length === 0) return null;
+
+          return (
+            <section className="px-4 mt-4">
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-[#fffdf5] via-[#fffbeb] to-[#fef3c7] border-2 border-[#f59e0b] shadow-md flex flex-col gap-3">
+                <div className="flex items-center justify-between border-b border-[#fde68a] pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-[#f59e0b] text-[#78350f] flex items-center justify-center shadow-sm">
+                      <span className="material-symbols-outlined text-[20px] text-white">psychology_alt</span>
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-[15px] text-[#78350f] tracking-tight flex items-center gap-1.5">
+                        <span>Hallazgos Curiosos de Campo</span>
+                        <span className="px-2 py-0.5 rounded-full bg-[#f59e0b] text-white text-[10px] font-mono font-bold">
+                          {curiousSightings.length} {curiousSightings.length === 1 ? 'hallazgo' : 'hallazgos'}
+                        </span>
+                      </h3>
+                      <span className="text-[11px] text-[#92400e]">
+                        Observaciones y peculiaridades biológicas singulares ordenadas por fecha de visita
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {curiousSightings.map((c) => (
+                    <div
+                      key={c.id}
+                      className="p-3.5 rounded-xl bg-white border border-[#fcd34d] shadow-sm flex flex-col md:flex-row gap-3 items-start"
+                    >
+                      {/* Foto del hallazgo */}
+                      {(c.curiousFindingPhoto || (c.photoUrls && c.photoUrls[0]) || '/hallazgo_macho_un_ojo.jpg') && (
+                        <div
+                          onClick={() =>
+                            setActivePhotoModal({
+                              url: c.curiousFindingPhoto || '/hallazgo_macho_un_ojo.jpg',
+                              label: c.curiousFindingTitle || 'Hallazgo Curioso',
+                              desc: c.curiousFindingDescription || c.behaviorObserved,
+                            })
+                          }
+                          className="relative w-full md:w-36 h-36 rounded-xl overflow-hidden bg-[#241a0e] flex-shrink-0 cursor-pointer group border border-[#fde68a]"
+                        >
+                          <img
+                            src={c.curiousFindingPhoto || '/hallazgo_macho_un_ojo.jpg'}
+                            alt={c.curiousFindingTitle || 'Foto del hallazgo'}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
+                          <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[14px]">zoom_in</span>
+                          </div>
+                          <span className="absolute bottom-1 left-1 bg-[#b45309] text-white text-[9px] font-mono px-1.5 py-0.5 rounded font-bold">
+                            FOTO ADJUNTA
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Información del hallazgo */}
+                      <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                        <div className="flex items-center justify-between flex-wrap gap-1">
+                          <span className="font-mono text-[10px] text-[#b45309] font-bold bg-[#fef3c7] px-2 py-0.5 rounded-md border border-[#fde68a] flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[12px]">calendar_month</span>
+                            {c.timestamp}
+                          </span>
+                          <span className="text-[11px] font-semibold text-[#78350f] flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[13px]">location_on</span>
+                            {c.locality}
+                          </span>
+                        </div>
+
+                        <h4 className="font-extrabold text-[14px] text-[#78350f] leading-snug">
+                          {c.curiousFindingTitle || 'Peculiaridad morfológica o etológica'}
+                        </h4>
+
+                        <p className="text-xs text-[#451a03] leading-relaxed">
+                          {c.curiousFindingDescription || c.behaviorObserved}
+                        </p>
+
+                        <div className="mt-1 pt-1.5 border-t border-[#fef3c7] flex flex-wrap items-center gap-2 text-[11px] text-[#92400e]">
+                          {c.microhabitat && (
+                            <span className="flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[13px]">nature</span>
+                              {c.microhabitat}
+                            </span>
+                          )}
+                          {c.count && (
+                            <span className="font-mono font-bold text-[#b45309]">
+                              • Total en coro: N={c.count} individuos
+                            </span>
+                          )}
+                          <span className="text-[#a16207]">
+                            • Observador: {c.observer}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Success toast notification */}
         {saveSuccessMsg && (
@@ -839,16 +1084,34 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
             <div className="flex flex-col gap-2">
               {specimen.sightings && specimen.sightings.length > 0 ? (
-                specimen.sightings.map((sight) => (
+                [...specimen.sightings]
+                  .sort((a, b) => {
+                    const dateA = a.date || a.timestamp || '';
+                    const dateB = b.date || b.timestamp || '';
+                    return dateB.localeCompare(dateA);
+                  })
+                  .map((sight) => (
                   <div
                     key={sight.id}
-                    className="p-3 rounded-lg bg-[#f2f4ee] border border-[#e1e3dd] flex flex-col gap-1.5 text-xs hover:border-[#006c49]/40 transition-colors"
+                    className={`p-3 rounded-lg border flex flex-col gap-1.5 text-xs transition-colors ${
+                      sight.isCuriousFinding || sight.curiousFindingTitle
+                        ? 'bg-[#fffdf5] border-[#f59e0b] shadow-sm'
+                        : 'bg-[#f2f4ee] border-[#e1e3dd] hover:border-[#006c49]/40'
+                    }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#002217] flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px] text-[#006c49]">pin_drop</span>
-                        {sight.locality}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-[#002217] flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px] text-[#006c49]">pin_drop</span>
+                          {sight.locality}
+                        </span>
+                        {(sight.isCuriousFinding || sight.curiousFindingTitle) && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#f59e0b] text-white text-[9px] font-bold font-mono uppercase flex items-center gap-0.5 shadow-xs">
+                            <span className="material-symbols-outlined text-[11px]">psychology_alt</span>
+                            Hallazgo Curioso
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-[10px] text-[#006c49] font-bold bg-white px-2 py-0.5 rounded border border-[#e1e3dd]">
                           N={sight.count || sight.individualsCount || 1} ind. • {sight.timestamp}
@@ -862,6 +1125,19 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                         </button>
                       </div>
                     </div>
+
+                    {(sight.curiousFindingTitle || sight.curiousFindingDescription) && (
+                      <div className="p-2 rounded-lg bg-[#fef3c7] border border-[#fde68a] flex flex-col gap-1 text-[#78350f]">
+                        <span className="font-bold text-xs flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px] text-[#b45309]">star</span>
+                          {sight.curiousFindingTitle}
+                        </span>
+                        {sight.curiousFindingDescription && (
+                          <p className="text-[11px] text-[#92400e] leading-snug">{sight.curiousFindingDescription}</p>
+                        )}
+                      </div>
+                    )}
+
                     <p className="text-[#191c19] mt-0.5">{sight.behaviorObserved}</p>
                     {sight.microhabitat && (
                       <span className="text-[11px] text-[#414844]">
@@ -1086,6 +1362,119 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 />
               </div>
 
+              {/* Condición de Vitalidad (Vivo / Muerto por atropello u otra causa) */}
+              <div className="p-3 rounded-xl bg-[#f8faf4] border border-[#c1c8c3] flex flex-col gap-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-[#002217] uppercase flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px] text-[#006c49]">vital_signs</span>
+                    Condición de Vitalidad del Individuo *
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1 text-xs cursor-pointer">
+                      <input
+                        type="radio"
+                        name="vitality"
+                        value="VIVO"
+                        checked={sightingVitality === 'VIVO'}
+                        onChange={() => setSightingVitality('VIVO')}
+                        className="text-[#006c49] focus:ring-[#006c49]"
+                      />
+                      <span className="font-bold text-[#006c49]">Vivo</span>
+                    </label>
+                    <label className="flex items-center gap-1 text-xs cursor-pointer">
+                      <input
+                        type="radio"
+                        name="vitality"
+                        value="MUERTO"
+                        checked={sightingVitality === 'MUERTO'}
+                        onChange={() => setSightingVitality('MUERTO')}
+                        className="text-red-600 focus:ring-red-600"
+                      />
+                      <span className="font-bold text-red-600">Muerto</span>
+                    </label>
+                  </div>
+                </div>
+
+                {sightingVitality === 'MUERTO' && (
+                  <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 flex flex-col gap-2 animate-in fade-in">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-red-800 uppercase mb-1">
+                          Causa de Muerte
+                        </label>
+                        <select
+                          value={sightingVitalityCause}
+                          onChange={(e) => setSightingVitalityCause(e.target.value as VitalityCause)}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-red-300 bg-white text-xs font-semibold text-red-900 focus:outline-none focus:ring-2 focus:ring-red-500"
+                        >
+                          <option value="ATROPELLO">Atropello (Vial / Carretera)</option>
+                          <option value="DEPREDACION">Depredación natural</option>
+                          <option value="DESECACION">Desecación / Sequía</option>
+                          <option value="ENFERMEDAD_HONGOS">Enfermedad / Quitridiomicosis</option>
+                          <option value="CAUSA_DESCONOCIDA">Causa desconocida</option>
+                          <option value="OTRO">Otro motivo</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-red-800 uppercase mb-1">
+                          Detalle / Ubicación del atropello
+                        </label>
+                        <input
+                          type="text"
+                          value={sightingVitalityDetail}
+                          onChange={(e) => setSightingVitalityDetail(e.target.value)}
+                          placeholder="Ej: Asfalto de carretera, borde de calzada..."
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-red-300 bg-white text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Estadio de Desarrollo & Sexo (Larva, Renacuajo, Huevo, Adulto, etc.) */}
+              <div className="p-3 rounded-xl bg-[#f8faf4] border border-[#c1c8c3] flex flex-col gap-2">
+                <span className="text-[11px] font-bold text-[#002217] uppercase flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px] text-[#006c49]">egg_alt</span>
+                  Estadio de Desarrollo &amp; Sexo
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#414844] uppercase mb-1">
+                      Estadio del individuo
+                    </label>
+                    <select
+                      value={sightingLifeStage}
+                      onChange={(e) => setSightingLifeStage(e.target.value as LifeStage)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#c1c8c3] bg-white text-xs font-semibold text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                    >
+                      <option value="ADULTO">Adulto</option>
+                      <option value="SUBADULTO">Subadulto</option>
+                      <option value="METAMORFO_JUVENIL">Juvenil / Metamorfo reciente</option>
+                      <option value="LARVA_RENACUAJO">Larva / Renacuajo</option>
+                      <option value="HUEVO">Huevo / Masa de huevos</option>
+                      <option value="NO_APLICA">No aplica (No especificado)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#414844] uppercase mb-1">
+                      Sexo Biológico
+                    </label>
+                    <select
+                      value={sightingSex}
+                      onChange={(e) => setSightingSex(e.target.value as BiologicalSex)}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#c1c8c3] bg-white text-xs font-semibold text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                    >
+                      <option value="NO_APLICA">No aplica (Ocultar)</option>
+                      <option value="MACHO">Macho</option>
+                      <option value="HEMBRA">Hembra</option>
+                      <option value="INDETERMINADO">Indeterminado</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               {/* Comportamiento Observado */}
               <div>
                 <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
@@ -1113,6 +1502,82 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                   placeholder="Detalles morfológicos, presencia de crías, depredadores cercanos..."
                   className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
                 />
+              </div>
+
+              {/* Registro de Hallazgo Curioso Opcional */}
+              <div className="p-3 rounded-xl bg-[#fff8e1] border border-[#ffe082] flex flex-col gap-2.5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={sightingIsCurious}
+                    onChange={(e) => setSightingIsCurious(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#f59e0b] focus:ring-[#f59e0b]"
+                  />
+                  <span className="text-xs font-bold text-[#92400e] flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px]">psychology_alt</span>
+                    ¿Marcar como Hallazgo Curioso de esta visita?
+                  </span>
+                </label>
+
+                {sightingIsCurious && (
+                  <div className="flex flex-col gap-2 pt-1 border-t border-[#fde68a]">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#92400e] uppercase mb-1">
+                        Título del Hallazgo Curioso *
+                      </label>
+                      <input
+                        type="text"
+                        required={sightingIsCurious}
+                        value={sightingCuriousTitle}
+                        onChange={(e) => setSightingCuriousTitle(e.target.value)}
+                        placeholder="Ej: Macho cantor al que le falta un ojo..."
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#fde68a] bg-white text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#92400e] uppercase mb-1">
+                        Descripción detallada del hallazgo *
+                      </label>
+                      <textarea
+                        rows={2}
+                        required={sightingIsCurious}
+                        value={sightingCuriousDesc}
+                        onChange={(e) => setSightingCuriousDesc(e.target.value)}
+                        placeholder="Describe la peculiaridad observada, altura, distancia, comportamiento..."
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#fde68a] bg-white text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#f59e0b]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#92400e] uppercase mb-1">
+                        Adjuntar Fotografía del Hallazgo
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              if (typeof ev.target?.result === 'string') {
+                                setSightingCuriousPhoto(ev.target.result);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="w-full text-xs text-[#92400e] file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#92400e] file:text-white file:cursor-pointer cursor-pointer"
+                      />
+                      {sightingCuriousPhoto && (
+                        <div className="mt-2 w-16 h-16 rounded-lg overflow-hidden border border-[#fde68a]">
+                          <img src={sightingCuriousPhoto} alt="Previa" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Botones de acción */}

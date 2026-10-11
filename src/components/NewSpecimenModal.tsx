@@ -22,6 +22,10 @@ interface NewSpecimenModalProps {
 
 const SAMPLE_FIELD_IMAGES = [
   {
+    name: 'Rana de las Nacientes (Los Santos)',
+    url: '/isthmohyla_nacientes.jpg',
+  },
+  {
     name: 'Rana Ojos Rojos (Sarapiquí)',
     url: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDvI7_6fTqgfYbPLKbGn0dFeW7hmnuRolqzd7Q_i2tcUFhIQO5UPw2MQBrfoR_PjDM-c7sqT6CdtQVsyoIP_fnDU9RXrw8NvRVtpA7JOiYHRcmwErrYso4uiDIH7IO1HdniMZq4nm1LM36RywajGzBnMXJI6ZBv8MEGSO_anGlnFjpGLL2LtKkDeBkJ6bAZ8qKDSvDv2NczPj54ygoDcje8UU6V8oi7EG7ddl-wRYqrXNZecg1XCf3y',
   },
