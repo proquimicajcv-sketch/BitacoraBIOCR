@@ -38,9 +38,41 @@ if (!fs.existsSync(DB_DIR)) {
  * Server JSON Database Endpoints for Cross-Device Persistence
  */
 let serverDbLastModified = Date.now();
+const DEVICES_DIR = path.join(process.cwd(), 'data', 'devices');
+if (!fs.existsSync(DEVICES_DIR)) {
+  fs.mkdirSync(DEVICES_DIR, { recursive: true });
+}
 
-app.get('/api/database/specimens', (_req: Request, res: Response): void => {
+function getTargetDbFile(deviceId?: string): string {
+  if (!deviceId || typeof deviceId !== 'string') {
+    return DB_FILE;
+  }
+  const safeId = deviceId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  return path.join(DEVICES_DIR, `${safeId}.json`);
+}
+
+app.get('/api/database/specimens', (req: Request, res: Response): void => {
   try {
+    const deviceId = req.query.deviceId as string | undefined;
+    const targetFile = getTargetDbFile(deviceId);
+
+    // If device file exists, return it
+    if (deviceId && fs.existsSync(targetFile)) {
+      const content = fs.readFileSync(targetFile, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data) && data.length > 0) {
+        const stats = fs.statSync(targetFile);
+        res.json({
+          success: true,
+          data,
+          deviceId,
+          lastModified: stats.mtimeMs,
+        });
+        return;
+      }
+    }
+
+    // Fallback to base reference database
     if (fs.existsSync(DB_FILE)) {
       const content = fs.readFileSync(DB_FILE, 'utf-8');
       const data = JSON.parse(content);
@@ -49,6 +81,7 @@ app.get('/api/database/specimens', (_req: Request, res: Response): void => {
         res.json({
           success: true,
           data,
+          deviceId: deviceId || 'base',
           lastModified: Math.max(serverDbLastModified, stats.mtimeMs),
         });
         return;
@@ -63,18 +96,22 @@ app.get('/api/database/specimens', (_req: Request, res: Response): void => {
 
 app.post('/api/database/specimens', (req: Request, res: Response): void => {
   try {
-    const { specimens, lastModified } = req.body;
+    const { specimens, lastModified, deviceId } = req.body;
     if (!Array.isArray(specimens)) {
       res.status(400).json({ success: false, error: 'Formato inválido' });
       return;
     }
-    fs.writeFileSync(DB_FILE, JSON.stringify(specimens, null, 2), 'utf-8');
-    serverDbLastModified = Number(lastModified) || Date.now();
+    const targetFile = getTargetDbFile(deviceId);
+    fs.writeFileSync(targetFile, JSON.stringify(specimens, null, 2), 'utf-8');
+    const updatedTime = Number(lastModified) || Date.now();
     res.json({
       success: true,
       count: specimens.length,
-      lastModified: serverDbLastModified,
-      message: 'Base de datos guardada en servidor',
+      deviceId: deviceId || 'global',
+      lastModified: updatedTime,
+      message: deviceId
+        ? `Base de datos guardada de forma aislada para el dispositivo ${deviceId}`
+        : 'Base de datos guardada en servidor',
     });
   } catch (err: any) {
     console.error('Error writing database file:', err);

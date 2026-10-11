@@ -14,26 +14,77 @@ import { SpecimenCatalogView } from './components/SpecimenCatalogView';
 import { DarwinCoreExporterModal } from './components/DarwinCoreExporterModal';
 import { SyncBackupModal } from './components/SyncBackupModal';
 import { StatisticsView } from './components/StatisticsView';
+import { DeviceProfileModal } from './components/DeviceProfileModal';
 
 type ActiveView = 'COVER' | 'DETAIL' | 'MAP' | 'CATALOG' | 'STATISTICS';
 
 const STORAGE_KEY = 'biobitacora_cr_specimens_v2';
 const CHANGED_KEY = 'biobitacora_cr_has_user_changes';
 const TIMESTAMP_KEY = 'biobitacora_cr_last_modified';
+const DEVICE_ID_KEY = 'biobitacora_cr_device_id';
+const OBSERVER_NAME_KEY = 'biobitacora_cr_observer_name';
+const DEVICE_NAME_KEY = 'biobitacora_cr_device_name';
+
+function getOrCreateDeviceId(): string {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+      id = `DEV-${rand}`;
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return 'DEV-LOCAL';
+  }
+}
 
 export default function App() {
+  const [deviceId] = useState<string>(() => getOrCreateDeviceId());
+  const [observerName, setObserverName] = useState<string>(() => {
+    try {
+      return localStorage.getItem(OBSERVER_NAME_KEY) || 'Ing. Jorge Carvajal V.';
+    } catch {
+      return 'Ing. Jorge Carvajal V.';
+    }
+  });
+  const [deviceName, setDeviceName] = useState<string>(() => {
+    try {
+      return localStorage.getItem(DEVICE_NAME_KEY) || 'Dispositivo de Campo';
+    } catch {
+      return 'Dispositivo de Campo';
+    }
+  });
+  const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
+  const [syncStatusToast, setSyncStatusToast] = useState<string | null>(null);
+
   const [specimens, setSpecimens] = useState<SpecimenRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        let parsed: SpecimenRecord[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Seamlessly upgrade Agalychnis sample to Isthmohyla nacientes if present
+          parsed = parsed.map((item) =>
+            item.scientificName === 'Agalychnis callidryas' || item.id === 'cr-bio-2024-8842'
+              ? INITIAL_SPECIMENS[0]
+              : item
+          );
+          return parsed;
+        }
       }
       // Backward compatibility check with v1
       const oldSaved = localStorage.getItem('biobitacora_cr_specimens');
       if (oldSaved) {
-        const parsed = JSON.parse(oldSaved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        let parsed: SpecimenRecord[] = JSON.parse(oldSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          parsed = parsed.map((item) =>
+            item.scientificName === 'Agalychnis callidryas' || item.id === 'cr-bio-2024-8842'
+              ? INITIAL_SPECIMENS[0]
+              : item
+          );
+          return parsed;
+        }
       }
     } catch {
       // Ignore
@@ -57,7 +108,7 @@ export default function App() {
     lifeZone?: string;
   } | undefined>(undefined);
 
-  // Centralized robust persistence helper
+  // Centralized robust persistence helper (isolated per device)
   const persistSpecimens = (updated: SpecimenRecord[]) => {
     setSpecimens(updated);
     const now = Date.now();
@@ -69,25 +120,25 @@ export default function App() {
       console.warn('LocalStorage error:', e);
     }
 
-    // Background-save to server (both dev server and serverless)
+    // Isolated background-save to server keyed by this deviceId
     fetch('/api/database/specimens', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ specimens: updated, lastModified: now }),
+      body: JSON.stringify({ specimens: updated, lastModified: now, deviceId }),
     }).catch(() => {});
   };
 
-  // Sync with server persistent database on mount without overwriting user local changes
+  // Check isolated server backup for THIS specific device ID if available (no cross-device mixing)
   useEffect(() => {
     const hasLocalChanges = localStorage.getItem(CHANGED_KEY) === 'true';
     const localTimestamp = Number(localStorage.getItem(TIMESTAMP_KEY) || '0');
 
-    fetch('/api/database/specimens')
+    // Query server only for this device's backup
+    fetch(`/api/database/specimens?deviceId=${encodeURIComponent(deviceId)}`)
       .then((res) => res.json())
       .then((data) => {
-        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        if (data.success && data.deviceId === deviceId && Array.isArray(data.data) && data.data.length > 0) {
           const serverTimestamp = Number(data.lastModified || '0');
-          // If the user has NOT modified locally, or if the server database has a newer timestamp
           if (!hasLocalChanges || serverTimestamp > localTimestamp) {
             setSpecimens(data.data);
             if (data.data.length > 0) {
@@ -99,25 +150,11 @@ export default function App() {
                 localStorage.setItem(TIMESTAMP_KEY, String(serverTimestamp));
               }
             } catch {}
-          } else if (hasLocalChanges && localTimestamp > serverTimestamp) {
-            // Local is newer! Push local data to update server database
-            fetch('/api/database/specimens', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ specimens, lastModified: localTimestamp }),
-            }).catch(() => {});
           }
-        } else if (hasLocalChanges || specimens.length > 0) {
-          // Server was uninitialized, seed server with current specimens
-          fetch('/api/database/specimens', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ specimens, lastModified: localTimestamp || Date.now() }),
-          }).catch(() => {});
         }
       })
-      .catch((err) => console.log('Offline or server database unreachable:', err));
-  }, []);
+      .catch((err) => console.log('Modo local/offline activo:', err));
+  }, [deviceId]);
 
   // Handle saving new or edited specimen
   const handleSaveSpecimen = (savedSpecimen: SpecimenRecord) => {
@@ -181,26 +218,35 @@ export default function App() {
     }
   };
 
-  // Server sync action
+  // Server sync action (isolated per device)
   const handleSyncServer = async () => {
     setIsSyncingServer(true);
     try {
       const res = await fetch('/api/database/specimens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ specimens }),
+        body: JSON.stringify({ specimens, deviceId, lastModified: Date.now() }),
       });
       const data = await res.json();
       if (data.success) {
-        alert(`¡Sincronización exitosa! ${specimens.length} registros guardados en el servidor para cualquier dispositivo.`);
+        setSyncStatusToast(`¡Copia de seguridad guardada! ${specimens.length} registros respaldados para ${deviceId}.`);
       } else {
-        alert('No se pudo guardar en el servidor: ' + data.error);
+        setSyncStatusToast('No se pudo guardar en el servidor: ' + data.error);
       }
-    } catch (err: any) {
-      alert('Error de conexión con el servidor. Estás en modo offline; tus datos siguen guardados localmente.');
+    } catch {
+      setSyncStatusToast('Estás en modo offline; tus datos siguen protegidos localmente en este equipo.');
     } finally {
       setIsSyncingServer(false);
+      setTimeout(() => setSyncStatusToast(null), 4000);
     }
+  };
+
+  const handleResetToInitial = () => {
+    persistSpecimens(INITIAL_SPECIMENS);
+    setCurrentSpecimen(INITIAL_SPECIMENS[0]);
+    localStorage.removeItem(CHANGED_KEY);
+    setSyncStatusToast('Bitácora de este equipo restablecida al catálogo de referencia limpio.');
+    setTimeout(() => setSyncStatusToast(null), 3500);
   };
 
   const handleOpenEdit = (specimen: SpecimenRecord) => {
@@ -237,6 +283,9 @@ export default function App() {
               setIsNewModalOpen(true);
             }}
             onOpenSyncBackup={() => setIsSyncModalOpen(true)}
+            onOpenDeviceProfile={() => setIsDeviceModalOpen(true)}
+            deviceId={deviceId}
+            observerName={observerName}
           />
         )}
 
@@ -257,6 +306,7 @@ export default function App() {
             }}
             onDelete={handleDeleteSpecimen}
             onUpdateBioacoustics={handleUpdateBioacoustics}
+            currentObserverName={observerName}
           />
         )}
 
@@ -504,6 +554,7 @@ export default function App() {
         onDelete={handleDeleteSpecimen}
         initialCoords={presetNewCoords}
         editingSpecimen={editingSpecimen}
+        defaultCollector={observerName}
       />
 
       {/* Darwin Core Exporter Modal */}
@@ -522,7 +573,46 @@ export default function App() {
         onImportSpecimens={handleImportSpecimens}
         onSyncServer={handleSyncServer}
         isSyncingServer={isSyncingServer}
+        deviceId={deviceId}
       />
+
+      {/* Device & Observer Profile Modal */}
+      <DeviceProfileModal
+        isOpen={isDeviceModalOpen}
+        onClose={() => setIsDeviceModalOpen(false)}
+        deviceId={deviceId}
+        observerName={observerName}
+        onSaveObserverName={(newName) => {
+          setObserverName(newName);
+          try {
+            localStorage.setItem(OBSERVER_NAME_KEY, newName);
+          } catch {}
+        }}
+        deviceName={deviceName}
+        onSaveDeviceName={(newDev) => {
+          setDeviceName(newDev);
+          try {
+            localStorage.setItem(DEVICE_NAME_KEY, newDev);
+          } catch {}
+        }}
+        specimensCount={specimens.length}
+        totalSightingsCount={specimens.reduce((acc, s) => acc + (s.sightings?.length || 1), 0)}
+        onResetToInitial={handleResetToInitial}
+        onOpenSyncBackup={() => setIsSyncModalOpen(true)}
+      />
+
+      {/* Toast Notification */}
+      {syncStatusToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] max-w-md w-[92%] bg-[#002217] text-[#6cf8bb] px-4 py-3 rounded-2xl shadow-2xl border border-[#6cf8bb]/40 flex items-center justify-between text-xs font-bold animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">verified</span>
+            <span>{syncStatusToast}</span>
+          </div>
+          <button onClick={() => setSyncStatusToast(null)} className="text-white hover:text-[#6cf8bb] cursor-pointer">
+            <span className="material-symbols-outlined text-[16px]">close</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

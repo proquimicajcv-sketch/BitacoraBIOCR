@@ -17,6 +17,7 @@ interface NewSpecimenModalProps {
   onDelete?: (id: string) => void;
   initialCoords?: { lat: number; lng: number; locality?: string; lifeZone?: string };
   editingSpecimen?: SpecimenRecord | null;
+  defaultCollector?: string;
 }
 
 const SAMPLE_FIELD_IMAGES = [
@@ -53,6 +54,7 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
   onDelete,
   initialCoords,
   editingSpecimen,
+  defaultCollector,
 }) => {
   if (!isOpen) return null;
 
@@ -99,7 +101,7 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
   const [genus, setGenus] = useState(editingSpecimen?.taxonomy.genus || 'Agalychnis');
   const [family, setFamily] = useState(editingSpecimen?.taxonomy.family || 'Hylidae');
   const [collector, setCollector] = useState(
-    editingSpecimen?.collector || 'Biol. M. Cordero (UCR-MZ)'
+    editingSpecimen?.collector || defaultCollector || 'Ing. Jorge Carvajal V.'
   );
   const [heroImage, setHeroImage] = useState(
     editingSpecimen?.heroImage ||
@@ -1167,6 +1169,7 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
             <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-white/10 text-[10px]">
               <span className="text-[#a5d0bc] font-mono">Ejemplos para probar:</span>
               {[
+                { common: 'Rana de las Nacientes', sci: 'Isthmohyla nacientes' },
                 { common: 'Rana de ojos rojos', sci: 'Agalychnis callidryas' },
                 { common: 'Quetzal resplandeciente', sci: 'Pharomachrus mocinno' },
                 { common: 'Mariposa Morfo azul', sci: 'Morpho peleides' },

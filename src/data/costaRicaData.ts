@@ -111,6 +111,18 @@ export const COSTA_RICA_HOTSPOTS: CostaRicaHotspot[] = [
     description: 'Interfase bosque lluvioso y arrecifes costeros con alta densidad de monos y perezosos.',
   },
   {
+    id: 'zona-los-santos',
+    name: 'Zona de los Santos (San Marcos, Tarrazú / Dota)',
+    subLocation: 'Nacientes de los Santos, Cordillera de Talamanca',
+    province: 'San José',
+    latitude: 9.6608,
+    longitude: -84.0205,
+    elevation: 1650,
+    lifeZone: 'Bosque Pluvial Montano Bajo (bp-MB)',
+    conservationArea: 'Área de Conservación Pacífico Central (ACOPAC)',
+    description: 'Hábitat montano de nacientes cristalinas, cafetales de altura y localidad tipo de Isthmohyla nacientes.',
+  },
+  {
     id: 'cahuita',
     name: 'Parque Nacional Cahuita',
     subLocation: 'Talamanca, Limón',

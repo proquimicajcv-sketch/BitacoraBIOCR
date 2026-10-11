@@ -7,6 +7,7 @@ import {
   CONSERVATION_AREAS_CR,
   formatCoordinatesDMS,
   findNearestHotspot,
+  estimateHoldridgeZone,
   isWithinCostaRica,
 } from '../data/costaRicaData';
 
@@ -17,7 +18,15 @@ interface CostaRicaMapProps {
   // If provided, the map acts in "picker" mode
   pickerMode?: boolean;
   initialCoords?: { lat: number; lng: number };
-  onCoordsChange?: (coords: { lat: number; lng: number; dms: string }) => void;
+  onCoordsChange?: (coords: {
+    lat: number;
+    lng: number;
+    dms: string;
+    locality?: string;
+    lifeZone?: string;
+    elevation?: number;
+    province?: string;
+  }) => void;
   isOnlineMode?: boolean;
 }
 
@@ -116,7 +125,19 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
     setCurrentCoords({ lat, lng });
     const dmsInfo = formatCoordinatesDMS(lat, lng);
     setCurrentDMS(dmsInfo.combined);
-    onCoordsChange?.({ lat, lng, dms: dmsInfo.combined });
+
+    const nearest = findNearestHotspot(lat, lng);
+    const predictedZone = estimateHoldridgeZone(nearest.elevation, lat, lng);
+
+    onCoordsChange?.({
+      lat,
+      lng,
+      dms: dmsInfo.combined,
+      locality: nearest.name,
+      lifeZone: predictedZone.name,
+      elevation: nearest.elevation,
+      province: `${nearest.province}, Costa Rica`,
+    });
 
     if (fly) {
       map.panTo([lat, lng]);
@@ -335,6 +356,7 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
   }, [initialCoords]);
 
   const nearestHotspot = findNearestHotspot(currentCoords.lat, currentCoords.lng);
+  const predictedHoldridge = estimateHoldridgeZone(nearestHotspot.elevation, currentCoords.lat, currentCoords.lng);
 
   return (
     <div className="relative w-full h-full min-h-[420px] flex flex-col bg-[#f8faf4] overflow-hidden">
@@ -480,9 +502,11 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
               </span>
             </div>
             <div className="text-[11px] text-[#414844] flex items-center gap-1.5 mt-0.5 truncate">
-              <span>{nearestHotspot.name}</span>
+              <span className="font-semibold text-[#002217]">{nearestHotspot.name}</span>
               <span>•</span>
-              <span className="text-[#006c49] font-medium">{nearestHotspot.lifeZone}</span>
+              <span className="text-[#006c49] font-bold bg-[#6cf8bb]/15 px-1.5 py-0.2 rounded font-mono text-[10px]">
+                {predictedHoldridge.name || nearestHotspot.lifeZone}
+              </span>
             </div>
           </div>
 
@@ -518,14 +542,15 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
             {/* Quick Register at this Spot */}
             {onOpenNewSpecimen && (
               <button
-                onClick={() =>
+                onClick={() => {
+                  const predictedZone = estimateHoldridgeZone(nearestHotspot.elevation, currentCoords.lat, currentCoords.lng);
                   onOpenNewSpecimen({
                     lat: currentCoords.lat,
                     lng: currentCoords.lng,
                     locality: nearestHotspot.name,
-                    lifeZone: nearestHotspot.lifeZone,
-                  })
-                }
+                    lifeZone: predictedZone.name || nearestHotspot.lifeZone,
+                  });
+                }}
                 className="px-3.5 py-2 rounded-lg bg-[#002217] hover:bg-[#0f382a] text-white text-xs font-bold flex items-center gap-1.5 shadow active:scale-95 transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[16px] text-[#6cf8bb]">add_circle</span>

@@ -7,6 +7,12 @@ import {
   SoundPlaybackController,
 } from '../utils/audioBioacoustics';
 import { AudioRecordingModal } from './AudioRecordingModal';
+import { CostaRicaMap } from './CostaRicaMap';
+import {
+  formatCoordinatesDMS,
+  findNearestHotspot,
+  estimateHoldridgeZone,
+} from '../data/costaRicaData';
 
 interface SpecimenDetailViewProps {
   specimen: SpecimenRecord;
@@ -16,8 +22,9 @@ interface SpecimenDetailViewProps {
   onSaveSpecimen?: (specimen: SpecimenRecord) => void;
   onOpenMap: (specimen: SpecimenRecord) => void;
   onOpenDarwinCoreModal: (specimen: SpecimenRecord) => void;
-  onDelete: (specimenId: string) => void;
+  onDelete?: (specimenId: string) => void;
   onUpdateBioacoustics: (specimenId: string, bioacoustics?: BioacousticRecord) => void;
+  currentObserverName?: string;
 }
 
 export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
@@ -30,6 +37,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   onOpenDarwinCoreModal,
   onDelete,
   onUpdateBioacoustics,
+  currentObserverName,
 }) => {
   const [isZoomed, setIsZoomed] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -40,7 +48,29 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
   // Direct Sighting Modal State
   const [isAddSightingModalOpen, setIsAddSightingModalOpen] = useState(false);
+  const [isChangePhotoModalOpen, setIsChangePhotoModalOpen] = useState(false);
+  const [newPhotoUrl, setNewPhotoUrl] = useState(specimen.heroImage);
+  const [newPhotoDescription, setNewPhotoDescription] = useState(specimen.heroImageDescription);
+  const [sightingObserver, setSightingObserver] = useState(currentObserverName || 'Ing. Jorge Carvajal V.');
   const [sightingLocality, setSightingLocality] = useState(specimen.georeference.locality || '');
+  const [sightingDate, setSightingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [sightingTime, setSightingTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  const [sightingPrecision, setSightingPrecision] = useState<'exact' | 'month_year'>('exact');
+  const [sightingMonthYear, setSightingMonthYear] = useState(() => new Date().toISOString().slice(0, 7));
+  const [sightingCoords, setSightingCoords] = useState<{ lat: number; lng: number }>(() => ({
+    lat: specimen.georeference.latitude,
+    lng: specimen.georeference.longitude,
+  }));
+  const [sightingCoordsDms, setSightingCoordsDms] = useState(
+    specimen.georeference.latitudeDMS && specimen.georeference.longitudeDMS
+      ? `${specimen.georeference.latitudeDMS}, ${specimen.georeference.longitudeDMS}`
+      : formatCoordinatesDMS(specimen.georeference.latitude, specimen.georeference.longitude).combined
+  );
+  const [sightingLifeZone, setSightingLifeZone] = useState(specimen.georeference.lifeZone || '');
+  const [showSightingMap, setShowSightingMap] = useState(false);
   const [sightingCount, setSightingCount] = useState(1);
   const [sightingWeather, setSightingWeather] = useState('Soleado y cálido, 26°C');
   const [sightingMicrohabitat, setSightingMicrohabitat] = useState(specimen.georeference.microhabitat || '');
@@ -103,7 +133,24 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   };
 
   const handleOpenAddSighting = () => {
+    const d = new Date();
+    setSightingObserver(currentObserverName || 'Ing. Jorge Carvajal V.');
     setSightingLocality(specimen.georeference.locality || '');
+    setSightingDate(d.toISOString().slice(0, 10));
+    setSightingTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+    setSightingPrecision('exact');
+    setSightingMonthYear(d.toISOString().slice(0, 7));
+    setSightingCoords({
+      lat: specimen.georeference.latitude,
+      lng: specimen.georeference.longitude,
+    });
+    setSightingCoordsDms(
+      specimen.georeference.latitudeDMS && specimen.georeference.longitudeDMS
+        ? `${specimen.georeference.latitudeDMS}, ${specimen.georeference.longitudeDMS}`
+        : formatCoordinatesDMS(specimen.georeference.latitude, specimen.georeference.longitude).combined
+    );
+    setSightingLifeZone(specimen.georeference.lifeZone || '');
+    setShowSightingMap(false);
     setSightingCount(1);
     setSightingWeather('Soleado y cálido, 26°C');
     setSightingMicrohabitat(specimen.georeference.microhabitat || '');
@@ -114,27 +161,42 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
   const handleSaveDirectSighting = (e: React.FormEvent) => {
     e.preventDefault();
-    const dateNow = new Date();
-    const formattedDate = dateNow.toISOString().slice(0, 10);
-    const formattedTimestamp =
-      dateNow.toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' }) +
-      ', ' +
-      dateNow.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }) +
-      ' CST';
+    let formattedTimestamp = '';
+    let recordDate = '';
+
+    if (sightingPrecision === 'exact') {
+      recordDate = sightingDate;
+      const timePart = sightingTime ? ` ${sightingTime} CST` : '';
+      formattedTimestamp = `${sightingDate}${timePart}`;
+    } else {
+      // Mes y Año aproximado (ej: 2026-03 -> Marzo 2026)
+      recordDate = sightingMonthYear;
+      const [year, month] = sightingMonthYear.split('-');
+      const monthNames = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+      ];
+      const monthName = month ? monthNames[parseInt(month, 10) - 1] || month : '';
+      formattedTimestamp = `${monthName} ${year} (Aproximado)`;
+    }
 
     const newSighting = {
       id: 'sight-' + Date.now(),
       timestamp: formattedTimestamp,
-      date: formattedDate,
-      observer: 'Ing. Jorge Carvajal V.',
+      date: recordDate,
+      observer: sightingObserver.trim() || currentObserverName || 'Ing. Jorge Carvajal V.',
       locality: sightingLocality.trim() || specimen.georeference.locality,
+      coordinates: sightingCoordsDms,
+      lifeZone: sightingLifeZone || specimen.georeference.lifeZone,
       count: Number(sightingCount) || 1,
       individualsCount: Number(sightingCount) || 1,
       microhabitat: sightingMicrohabitat.trim() || specimen.georeference.microhabitat,
       weather: sightingWeather.trim(),
       weatherConditions: sightingWeather.trim(),
       behaviorObserved: sightingBehavior.trim() || 'Avistamiento de espécimen activo en su entorno silvestre.',
-      notes: sightingNotes.trim(),
+      notes: sightingNotes.trim()
+        ? `${sightingNotes.trim()}${sightingLifeZone ? ` • Zona: ${sightingLifeZone}` : ''}`
+        : (sightingLifeZone ? `Zona de Vida: ${sightingLifeZone}` : undefined),
     };
 
     const updatedSightings = [newSighting, ...(specimen.sightings || [])];
@@ -148,7 +210,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     }
 
     setIsAddSightingModalOpen(false);
-    setSaveSuccessMsg('¡Nuevo avistamiento registrado y guardado permanentemente!');
+    setSaveSuccessMsg('¡Nuevo avistamiento registrado con coordenadas y zona de vida Holdridge guardado permanentemente!');
     setTimeout(() => setSaveSuccessMsg(null), 4000);
   };
 
@@ -254,16 +316,30 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               </div>
             </div>
 
-            {/* Quick Interactive Zoom & Audio Tools */}
+            {/* Quick Interactive Zoom, Photo & Audio Tools */}
             <div className="absolute bottom-16 right-3 flex flex-col gap-2 z-10">
               <button
                 aria-label="Ampliar imagen de espécimen"
                 onClick={() => setIsZoomed(!isZoomed)}
                 className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md text-[#191c19] flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer hover:bg-white"
+                title={isZoomed ? "Reducir zoom" : "Ampliar fotografía"}
               >
                 <span className="material-symbols-outlined text-[20px]">
                   {isZoomed ? 'zoom_out' : 'zoom_in'}
                 </span>
+              </button>
+
+              <button
+                aria-label="Cambiar fotografía del espécimen"
+                onClick={() => {
+                  setNewPhotoUrl(specimen.heroImage);
+                  setNewPhotoDescription(specimen.heroImageDescription);
+                  setIsChangePhotoModalOpen(true);
+                }}
+                className="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md text-[#006c49] flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer hover:bg-white"
+                title="Actualizar o subir fotografía del espécimen"
+              >
+                <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
               </button>
 
               {specimen.bioacoustics && (
@@ -275,6 +351,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                       ? 'bg-[#6cf8bb] text-[#00714d] ring-2 ring-[#006c49]'
                       : 'bg-[#006c49] text-white hover:bg-[#005236]'
                   }`}
+                  title="Escuchar canto"
                 >
                   <span className="material-symbols-outlined text-[20px]">
                     {isPlayingAudio ? 'pause' : 'volume_up'}
@@ -897,7 +974,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 type="button"
                 onClick={() => {
                   setShowDeleteConfirm(false);
-                  onDelete(specimen.id);
+                  onDelete?.(specimen.id);
                 }}
                 className="py-2.5 px-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold cursor-pointer"
               >
@@ -936,6 +1013,21 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveDirectSighting} className="flex flex-col gap-3">
+              {/* Observador */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                  Observador / Registrador *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={sightingObserver}
+                  onChange={(e) => setSightingObserver(e.target.value)}
+                  placeholder="Nombre de quien realiza el avistamiento..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                />
+              </div>
+
               {/* Localidad */}
               <div>
                 <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
@@ -1041,6 +1133,130 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Change Photo Modal */}
+      {isChangePhotoModalOpen && (
+        <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="max-w-md w-full bg-white rounded-3xl p-5 shadow-2xl border border-[#c1c8c3] flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-[#e1e3dd] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-[#e8f5e9] text-[#006c49] flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">add_a_photo</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-[#002217] text-sm">Actualizar Fotografía</h3>
+                  <p className="text-[11px] text-[#717974]">{specimen.scientificName}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsChangePhotoModalOpen(false)}
+                className="w-8 h-8 rounded-full hover:bg-[#f0f2ec] text-[#414844] flex items-center justify-center cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            {/* Preview */}
+            <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-black/10 border border-[#c1c8c3] flex items-center justify-center">
+              {newPhotoUrl ? (
+                <img
+                  src={newPhotoUrl}
+                  alt="Vista previa"
+                  className="w-full h-full object-cover"
+                  onError={() => {}}
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-[#717974]">
+                  <span className="material-symbols-outlined text-3xl">image</span>
+                  <span className="text-xs">Sin fotografía seleccionada</span>
+                </div>
+              )}
+            </div>
+
+            {/* File Upload Option */}
+            <div>
+              <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                Subir desde este dispositivo
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      if (typeof ev.target?.result === 'string') {
+                        setNewPhotoUrl(ev.target.result);
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                className="w-full text-xs text-[#414844] file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#002217] file:text-[#6cf8bb] file:cursor-pointer hover:file:bg-[#003d2b] cursor-pointer"
+              />
+            </div>
+
+            {/* URL Option */}
+            <div>
+              <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                O pegar enlace URL de la imagen
+              </label>
+              <input
+                type="url"
+                value={newPhotoUrl}
+                onChange={(e) => setNewPhotoUrl(e.target.value)}
+                placeholder="https://ejemplo.com/isthmohyla_nacientes.jpg"
+                className="w-full px-3 py-2 text-xs bg-[#f8faf4] border border-[#c1c8c3] rounded-xl text-[#191c19] focus:outline-none focus:border-[#006c49]"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                Descripción / Pie de foto
+              </label>
+              <input
+                type="text"
+                value={newPhotoDescription}
+                onChange={(e) => setNewPhotoDescription(e.target.value)}
+                placeholder="Ej. Espécimen vivo de Isthmohyla nacientes en Quebrada Las Nacientes..."
+                className="w-full px-3 py-2 text-xs bg-[#f8faf4] border border-[#c1c8c3] rounded-xl text-[#191c19] focus:outline-none focus:border-[#006c49]"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#e1e3dd]">
+              <button
+                type="button"
+                onClick={() => setIsChangePhotoModalOpen(false)}
+                className="py-2.5 px-3 rounded-xl border border-[#c1c8c3] text-xs font-bold text-[#414844] hover:bg-[#f0f2ec] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (newPhotoUrl) {
+                    onSaveSpecimen?.({
+                      ...specimen,
+                      heroImage: newPhotoUrl,
+                      heroImageDescription:
+                        newPhotoDescription || `Fotografía de ${specimen.scientificName}`,
+                    });
+                    setIsChangePhotoModalOpen(false);
+                    setSaveSuccessMsg('¡Fotografía del espécimen actualizada con éxito!');
+                    setTimeout(() => setSaveSuccessMsg(null), 3000);
+                  }
+                }}
+                className="py-2.5 px-3 rounded-xl bg-[#002217] hover:bg-[#003d2b] text-[#6cf8bb] text-xs font-bold flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">check</span>
+                <span>Guardar Fotografía</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

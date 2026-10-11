@@ -64,11 +64,11 @@ export function playFrogCall(
     osc1.frequency.setValueAtTime(420, pulseTime);
     osc1.frequency.exponentialRampToValueAtTime(190, pulseTime + 0.12);
 
-    // Formant bandpass filter around 2.1 kHz (dominant frequency of Agalychnis callidryas)
+    // Formant bandpass filter around 3.8 kHz (dominant frequency of Isthmohyla nacientes)
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(2100, pulseTime);
-    filter.Q.setValueAtTime(4.5, pulseTime);
+    filter.frequency.setValueAtTime(3800, pulseTime);
+    filter.Q.setValueAtTime(5.0, pulseTime);
 
     // Amplitude envelope
     const pulseGain = ctx.createGain();
@@ -212,7 +212,7 @@ export function playCustomAudio(
 /**
  * Creates and downloads a client-generated WAV sonogram audio file
  */
-export function generateSonogramWav(filename = 'CR-BIO-Agalychnis-callidryas.wav') {
+export function generateSonogramWav(filename = 'CR-BIO-Isthmohyla-nacientes.wav') {
   const sampleRate = 44100;
   const duration = 2.5;
   const numSamples = sampleRate * duration;

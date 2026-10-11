@@ -8,6 +8,9 @@ interface CoverLandingViewProps {
   onOpenStatistics?: () => void;
   onOpenNewSpecimen: () => void;
   onOpenSyncBackup: () => void;
+  onOpenDeviceProfile?: () => void;
+  deviceId?: string;
+  observerName?: string;
   specimensCount: number;
   currentSpecimen: SpecimenRecord;
 }
@@ -19,6 +22,9 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
   onOpenStatistics,
   onOpenNewSpecimen,
   onOpenSyncBackup,
+  onOpenDeviceProfile,
+  deviceId,
+  observerName,
   specimensCount,
   currentSpecimen,
 }) => {
@@ -71,6 +77,16 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
           </div>
 
           <button
+            onClick={onOpenDeviceProfile}
+            className="px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md border border-[#6cf8bb]/50 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+            title="Gestión de este Dispositivo (Aislado sin cuentas)"
+          >
+            <span className="material-symbols-outlined text-[16px]">devices</span>
+            <span className="hidden sm:inline">Dispositivo {deviceId ? `(${deviceId})` : ''}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#6cf8bb] animate-pulse" />
+          </button>
+
+          <button
             onClick={onOpenSyncBackup}
             className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
             title="Respaldo JSON y persistencia multi-dispositivo"
@@ -93,13 +109,18 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
               </span>
             </div>
 
-            {/* Prominente insignia de autor */}
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#003824]/80 border border-[#6cf8bb]/50 w-fit backdrop-blur-md shadow-sm">
-              <span className="material-symbols-outlined text-[15px] text-[#6cf8bb]">workspace_premium</span>
-              <span className="text-xs text-white font-medium">
-                Elaborado por: <strong className="text-[#6cf8bb] font-bold">Ing. Jorge Carvajal V.</strong>
-              </span>
-            </div>
+            {/* Insignia Multi-Dispositivo Independiente */}
+            {onOpenDeviceProfile && (
+              <button
+                onClick={onOpenDeviceProfile}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 w-fit backdrop-blur-md text-xs text-[#6cf8bb] font-mono cursor-pointer transition-all"
+                title="Configuración de este dispositivo (sin cuentas)"
+              >
+                <span className="material-symbols-outlined text-[14px]">smartphone</span>
+                <span>Bitácora Local: <strong>{deviceId || 'DEV-ACTIVO'}</strong></span>
+                <span className="text-[10px] text-white/70 hidden sm:inline">• Datos aislados</span>
+              </button>
+            )}
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white drop-shadow-md">
@@ -234,14 +255,9 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
         </div>
       </div>
 
-      {/* Footer Scientific Status Bar con Crédito Explícito */}
+      {/* Footer Scientific Status Bar */}
       <footer className="relative z-10 px-5 py-3 max-w-4xl mx-auto w-full border-t border-white/10 bg-black/40 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs text-[#a5d0bc]">
         <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-1.5 font-medium text-white">
-            <span className="material-symbols-outlined text-[16px] text-[#6cf8bb]">engineering</span>
-            <span>Elaborado por: <strong className="text-[#6cf8bb]">Ing. Jorge Carvajal V.</strong></span>
-          </div>
-
           <div className="flex items-center gap-1.5 font-mono text-[11px]">
             <span className="material-symbols-outlined text-[15px] text-[#6cf8bb]">landscape</span>
             <span>13 Zonas Holdridge CR</span>
