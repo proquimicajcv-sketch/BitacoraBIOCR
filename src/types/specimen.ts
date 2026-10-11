@@ -69,9 +69,11 @@ export interface SightingEntry {
   observer: string;
   locality: string;
   coordinates?: string;
-  count: number;
+  count?: number;
+  individualsCount?: number; // Alias for count
   microhabitat?: string;
   weather?: string;
+  weatherConditions?: string; // Alias for weather
   temperatureC?: number;
   behaviorObserved: string;
   photoUrls?: string[];

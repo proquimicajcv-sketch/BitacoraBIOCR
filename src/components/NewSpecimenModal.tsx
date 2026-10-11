@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { SpecimenRecord, TaxonGroup, BioacousticRecord, PhotoRecord, SightingEntry } from '../types/specimen';
 import { CostaRicaMap } from './CostaRicaMap';
@@ -209,6 +209,51 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
 
   // Delete confirmation modal state
   const [showDeletePrompt, setShowDeletePrompt] = useState(false);
+
+  // Synchronize modal state whenever opened with an existing specimen or new coords
+  useEffect(() => {
+    if (isOpen) {
+      if (editingSpecimen) {
+        setCoords({
+          lat: editingSpecimen.georeference.latitude,
+          lng: editingSpecimen.georeference.longitude,
+        });
+        setLocality(editingSpecimen.georeference.locality);
+        setProvince(editingSpecimen.georeference.province);
+        setElevation(editingSpecimen.georeference.elevationMeters);
+        setLifeZone(editingSpecimen.georeference.lifeZone);
+        setMicrohabitat(editingSpecimen.georeference.microhabitat);
+        setScientificName(editingSpecimen.scientificName);
+        setCommonName(editingSpecimen.commonName);
+        setTaxonGroup(editingSpecimen.taxonGroup);
+        setGenus(editingSpecimen.taxonomy.genus);
+        setFamily(editingSpecimen.taxonomy.family);
+        setCollector(editingSpecimen.collector);
+        setHeroImage(editingSpecimen.heroImage);
+        setUploadedBase64(null);
+        setLhcMm(editingSpecimen.morphometrics.snoutVentLengthMm || 50.0);
+        setColorationNotes(editingSpecimen.morphometrics.colorationAndAnatomy || '');
+        setEthologyNotes(editingSpecimen.morphometrics.ethologyAndReproduction || '');
+        setCourtshipNotes(editingSpecimen.morphometrics.courtshipAndMating || '');
+        setInterspecificNotes(editingSpecimen.morphometrics.interspecificRelations || '');
+        setConfirmedScienceNotes(editingSpecimen.morphometrics.confirmedScientificData || '');
+        setHasBioacoustics(!!editingSpecimen.bioacoustics);
+        setAudioTitle(editingSpecimen.bioacoustics?.title || 'Canto de Anuncio');
+        setAudioCallType(editingSpecimen.bioacoustics?.callType || 'Vocalización Territorial');
+        setAudioFrequency(editingSpecimen.bioacoustics?.dominantFrequencyRange || '1.8 - 2.4 kHz');
+        setAudioPattern(editingSpecimen.bioacoustics?.audioPatternDescription || '');
+        setAudioDataUrl(editingSpecimen.bioacoustics?.audioDataUrl || null);
+        setAdditionalPhotosList(editingSpecimen.additionalPhotos || []);
+        setSightingsList(editingSpecimen.sightings || []);
+        setShowAddSighting(false);
+      } else if (initialCoords) {
+        setCoords({ lat: initialCoords.lat, lng: initialCoords.lng });
+        if (initialCoords.locality) setLocality(initialCoords.locality);
+        if (initialCoords.lifeZone) setLifeZone(initialCoords.lifeZone);
+        setShowAddSighting(false);
+      }
+    }
+  }, [isOpen, editingSpecimen, initialCoords]);
 
   // Coords change handler from the interactive map
   const handleCoordsChange = (newCoords: { lat: number; lng: number; dms: string }) => {

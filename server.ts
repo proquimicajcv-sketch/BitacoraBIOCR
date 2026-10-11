@@ -37,30 +37,45 @@ if (!fs.existsSync(DB_DIR)) {
 /**
  * Server JSON Database Endpoints for Cross-Device Persistence
  */
+let serverDbLastModified = Date.now();
+
 app.get('/api/database/specimens', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(DB_FILE)) {
       const content = fs.readFileSync(DB_FILE, 'utf-8');
       const data = JSON.parse(content);
-      res.json({ success: true, data });
-      return;
+      if (Array.isArray(data) && data.length > 0) {
+        const stats = fs.statSync(DB_FILE);
+        res.json({
+          success: true,
+          data,
+          lastModified: Math.max(serverDbLastModified, stats.mtimeMs),
+        });
+        return;
+      }
     }
-    res.json({ success: true, data: null });
+    res.json({ success: true, data: null, lastModified: 0 });
   } catch (err: any) {
     console.warn('Error reading database file:', err);
-    res.json({ success: true, data: null });
+    res.json({ success: true, data: null, lastModified: 0 });
   }
 });
 
 app.post('/api/database/specimens', (req: Request, res: Response): void => {
   try {
-    const { specimens } = req.body;
+    const { specimens, lastModified } = req.body;
     if (!Array.isArray(specimens)) {
       res.status(400).json({ success: false, error: 'Formato inválido' });
       return;
     }
     fs.writeFileSync(DB_FILE, JSON.stringify(specimens, null, 2), 'utf-8');
-    res.json({ success: true, count: specimens.length, message: 'Base de datos guardada en servidor' });
+    serverDbLastModified = Number(lastModified) || Date.now();
+    res.json({
+      success: true,
+      count: specimens.length,
+      lastModified: serverDbLastModified,
+      message: 'Base de datos guardada en servidor',
+    });
   } catch (err: any) {
     console.error('Error writing database file:', err);
     res.status(500).json({ success: false, error: err.message });

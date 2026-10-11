@@ -13,15 +13,26 @@ import { NewSpecimenModal } from './components/NewSpecimenModal';
 import { SpecimenCatalogView } from './components/SpecimenCatalogView';
 import { DarwinCoreExporterModal } from './components/DarwinCoreExporterModal';
 import { SyncBackupModal } from './components/SyncBackupModal';
+import { StatisticsView } from './components/StatisticsView';
 
-type ActiveView = 'COVER' | 'DETAIL' | 'MAP' | 'CATALOG';
+type ActiveView = 'COVER' | 'DETAIL' | 'MAP' | 'CATALOG' | 'STATISTICS';
+
+const STORAGE_KEY = 'biobitacora_cr_specimens_v2';
+const CHANGED_KEY = 'biobitacora_cr_has_user_changes';
+const TIMESTAMP_KEY = 'biobitacora_cr_last_modified';
 
 export default function App() {
   const [specimens, setSpecimens] = useState<SpecimenRecord[]>(() => {
     try {
-      const saved = localStorage.getItem('biobitacora_cr_specimens');
+      const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      // Backward compatibility check with v1
+      const oldSaved = localStorage.getItem('biobitacora_cr_specimens');
+      if (oldSaved) {
+        const parsed = JSON.parse(oldSaved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {
@@ -46,28 +57,63 @@ export default function App() {
     lifeZone?: string;
   } | undefined>(undefined);
 
-  // Sync to local storage
-  useEffect(() => {
+  // Centralized robust persistence helper
+  const persistSpecimens = (updated: SpecimenRecord[]) => {
+    setSpecimens(updated);
+    const now = Date.now();
     try {
-      localStorage.setItem('biobitacora_cr_specimens', JSON.stringify(specimens));
-    } catch {
-      // Ignore
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      localStorage.setItem(TIMESTAMP_KEY, String(now));
+      localStorage.setItem(CHANGED_KEY, 'true');
+    } catch (e) {
+      console.warn('LocalStorage error:', e);
     }
-  }, [specimens]);
 
-  // Initial attempt to load shared database from server (cross-device persistence)
+    // Background-save to server (both dev server and serverless)
+    fetch('/api/database/specimens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ specimens: updated, lastModified: now }),
+    }).catch(() => {});
+  };
+
+  // Sync with server persistent database on mount without overwriting user local changes
   useEffect(() => {
+    const hasLocalChanges = localStorage.getItem(CHANGED_KEY) === 'true';
+    const localTimestamp = Number(localStorage.getItem(TIMESTAMP_KEY) || '0');
+
     fetch('/api/database/specimens')
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-          // If local has only initial specimens or fewer, update with server persistent database
-          setSpecimens((local) => {
-            if (local.length <= INITIAL_SPECIMENS.length) {
-              return data.data;
+          const serverTimestamp = Number(data.lastModified || '0');
+          // If the user has NOT modified locally, or if the server database has a newer timestamp
+          if (!hasLocalChanges || serverTimestamp > localTimestamp) {
+            setSpecimens(data.data);
+            if (data.data.length > 0) {
+              setCurrentSpecimen(data.data[0]);
             }
-            return local;
-          });
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(data.data));
+              if (serverTimestamp) {
+                localStorage.setItem(TIMESTAMP_KEY, String(serverTimestamp));
+              }
+            } catch {}
+          } else if (hasLocalChanges && localTimestamp > serverTimestamp) {
+            // Local is newer! Push local data to update server database
+            fetch('/api/database/specimens', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ specimens, lastModified: localTimestamp }),
+            }).catch(() => {});
+          }
+        } else if (hasLocalChanges || specimens.length > 0) {
+          // Server was uninitialized, seed server with current specimens
+          fetch('/api/database/specimens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ specimens, lastModified: localTimestamp || Date.now() }),
+          }).catch(() => {});
         }
       })
       .catch((err) => console.log('Offline or server database unreachable:', err));
@@ -75,69 +121,48 @@ export default function App() {
 
   // Handle saving new or edited specimen
   const handleSaveSpecimen = (savedSpecimen: SpecimenRecord) => {
-    setSpecimens((prev) => {
-      const existsIndex = prev.findIndex((s) => s.id === savedSpecimen.id);
-      let updated: SpecimenRecord[];
-      if (existsIndex >= 0) {
-        updated = [...prev];
-        updated[existsIndex] = savedSpecimen;
-      } else {
-        updated = [savedSpecimen, ...prev];
-      }
+    const existsIndex = specimens.findIndex((s) => s.id === savedSpecimen.id);
+    let updated: SpecimenRecord[];
+    if (existsIndex >= 0) {
+      updated = [...specimens];
+      updated[existsIndex] = savedSpecimen;
+    } else {
+      updated = [savedSpecimen, ...specimens];
+    }
 
-      // Automatically background-save to server database
-      fetch('/api/database/specimens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ specimens: updated }),
-      }).catch(() => {});
-
-      return updated;
-    });
-
+    persistSpecimens(updated);
     setCurrentSpecimen(savedSpecimen);
-    setActiveView('DETAIL');
     setEditingSpecimen(null);
   };
 
   // Handle deleting specimen
   const handleDeleteSpecimen = (specimenId: string) => {
-    setSpecimens((prev) => {
-      const filtered = prev.filter((s) => s.id !== specimenId);
-      if (currentSpecimen.id === specimenId) {
-        if (filtered.length > 0) {
-          setCurrentSpecimen(filtered[0]);
-        } else {
-          setCurrentSpecimen(INITIAL_SPECIMENS[0]);
-        }
-        setActiveView('CATALOG');
+    const filtered = specimens.filter((s) => s.id !== specimenId);
+    if (currentSpecimen.id === specimenId) {
+      if (filtered.length > 0) {
+        setCurrentSpecimen(filtered[0]);
+      } else {
+        setCurrentSpecimen(INITIAL_SPECIMENS[0]);
       }
+      setActiveView('CATALOG');
+    }
 
-      // Sync deletion to server
-      fetch('/api/database/specimens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ specimens: filtered }),
-      }).catch(() => {});
-
-      return filtered;
-    });
+    persistSpecimens(filtered);
   };
 
-  // Handle updating or suppressing bioacoustics directly
+  // Handle updating bioacoustics directly
   const handleUpdateBioacoustics = (specimenId: string, bioacoustics?: BioacousticRecord) => {
-    setSpecimens((prev) =>
-      prev.map((s) => {
-        if (s.id === specimenId) {
-          const updated = { ...s, bioacoustics };
-          if (currentSpecimen.id === specimenId) {
-            setCurrentSpecimen(updated);
-          }
-          return updated;
+    const updated = specimens.map((s) => {
+      if (s.id === specimenId) {
+        const item = { ...s, bioacoustics };
+        if (currentSpecimen.id === specimenId) {
+          setCurrentSpecimen(item);
         }
-        return s;
-      })
-    );
+        return item;
+      }
+      return s;
+    });
+    persistSpecimens(updated);
   };
 
   // Handle importing JSON records
@@ -150,16 +175,10 @@ export default function App() {
       const uniqueNew = imported.filter((s) => !existingIds.has(s.id));
       result = [...specimens, ...uniqueNew];
     }
-    setSpecimens(result);
+    persistSpecimens(result);
     if (result.length > 0) {
       setCurrentSpecimen(result[0]);
     }
-    // Save to server
-    fetch('/api/database/specimens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ specimens: result }),
-    }).catch(() => {});
   };
 
   // Server sync action
@@ -211,6 +230,7 @@ export default function App() {
             onOpenDetail={() => setActiveView('DETAIL')}
             onOpenMap={() => setActiveView('MAP')}
             onOpenCatalog={() => setActiveView('CATALOG')}
+            onOpenStatistics={() => setActiveView('STATISTICS')}
             onOpenNewSpecimen={() => {
               setEditingSpecimen(null);
               setPresetNewCoords(undefined);
@@ -224,6 +244,8 @@ export default function App() {
           <SpecimenDetailView
             specimen={currentSpecimen}
             onBack={() => setActiveView('CATALOG')}
+            onGoHome={() => setActiveView('COVER')}
+            onSaveSpecimen={handleSaveSpecimen}
             onEdit={handleOpenEdit}
             onOpenMap={(spec) => {
               setCurrentSpecimen(spec);
@@ -250,12 +272,22 @@ export default function App() {
                 >
                   <span className="material-symbols-outlined text-[20px]">arrow_back</span>
                 </button>
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[#6cf8bb] text-[20px]">travel_explore</span>
-                  <h2 className="font-bold text-sm tracking-tight">
-                    SIG de Biodiversidad Costa Rica
-                  </h2>
-                </div>
+                {/* Ícono superior para regresar a Inicio */}
+                <button
+                  onClick={() => setActiveView('COVER')}
+                  className="flex items-center gap-1.5 hover:opacity-85 transition-all cursor-pointer group text-left"
+                  title="Ir a Inicio / Portada"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-white/10 group-hover:bg-[#006c49] flex items-center justify-center text-[#6cf8bb] group-hover:text-white transition-colors">
+                    <span className="material-symbols-outlined text-[18px]">cottage</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="font-bold text-sm tracking-tight text-white group-hover:text-[#6cf8bb] transition-colors">
+                      SIG de Biodiversidad CR
+                    </h2>
+                    <span className="text-[10px] text-[#a5d0bc] font-mono">(Inicio)</span>
+                  </div>
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -313,24 +345,44 @@ export default function App() {
             onOpenMap={() => setActiveView('MAP')}
             onOpenDarwinCore={() => setIsDwcModalOpen(true)}
             onOpenSyncBackup={() => setIsSyncModalOpen(true)}
+            onOpenStatistics={() => setActiveView('STATISTICS')}
+            onGoHome={() => setActiveView('COVER')}
             onDeleteSpecimen={handleDeleteSpecimen}
+          />
+        )}
+
+        {activeView === 'STATISTICS' && (
+          <StatisticsView
+            specimens={specimens}
+            onSelectSpecimen={(spec) => {
+              setCurrentSpecimen(spec);
+              setActiveView('DETAIL');
+            }}
+            onOpenCatalog={() => setActiveView('CATALOG')}
+            onOpenNewSpecimen={() => {
+              setEditingSpecimen(null);
+              setPresetNewCoords(undefined);
+              setIsNewModalOpen(true);
+            }}
+            onGoHome={() => setActiveView('COVER')}
           />
         )}
       </main>
 
-      {/* Bottom Global Navigation Bar */}
+      {/* Bottom Global Navigation Bar: 3 ítems izquierda | BOTÓN CENTRAL [+] | 3 ítems derecha */}
       <nav className="fixed bottom-0 inset-x-0 z-50 bg-[#f8faf4]/95 backdrop-blur-xl border-t border-[#c1c8c3]/40 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
-        <div className="h-16 max-w-lg mx-auto px-3 flex items-center justify-between">
+        <div className="h-16 max-w-xl mx-auto px-2 sm:px-3 flex items-center justify-between">
+          {/* 1. Portada */}
           <button
             onClick={() => setActiveView('COVER')}
-            className={`flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer ${
               activeView === 'COVER'
                 ? 'text-[#002217] scale-105 font-bold'
                 : 'text-[#717974] hover:text-[#191c19]'
             }`}
           >
             <span
-              className={`material-symbols-outlined text-[21px] ${
+              className={`material-symbols-outlined text-[20px] sm:text-[21px] ${
                 activeView === 'COVER' ? 'text-[#006c49]' : ''
               }`}
             >
@@ -339,16 +391,17 @@ export default function App() {
             <span>Portada</span>
           </button>
 
+          {/* 2. Ficha */}
           <button
             onClick={() => setActiveView('DETAIL')}
-            className={`flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer ${
               activeView === 'DETAIL'
                 ? 'text-[#002217] scale-105 font-bold'
                 : 'text-[#717974] hover:text-[#191c19]'
             }`}
           >
             <span
-              className={`material-symbols-outlined text-[21px] ${
+              className={`material-symbols-outlined text-[20px] sm:text-[21px] ${
                 activeView === 'DETAIL' ? 'text-[#006c49]' : ''
               }`}
             >
@@ -357,29 +410,17 @@ export default function App() {
             <span>Ficha</span>
           </button>
 
-          {/* Central Add Button */}
-          <button
-            onClick={() => {
-              setEditingSpecimen(null);
-              setPresetNewCoords(undefined);
-              setIsNewModalOpen(true);
-            }}
-            className="w-11 h-11 -mt-4 rounded-full bg-[#002217] hover:bg-[#0f382a] text-[#6cf8bb] flex items-center justify-center shadow-lg active:scale-95 transition-all cursor-pointer border-2 border-white"
-            title="Registrar nuevo espécimen con GPS o mapa offline"
-          >
-            <span className="material-symbols-outlined text-[24px]">add</span>
-          </button>
-
+          {/* 3. Mapa CR (Ahora antes del botón central de registro) */}
           <button
             onClick={() => setActiveView('MAP')}
-            className={`flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer ${
               activeView === 'MAP'
                 ? 'text-[#002217] scale-105 font-bold'
                 : 'text-[#717974] hover:text-[#191c19]'
             }`}
           >
             <span
-              className={`material-symbols-outlined text-[21px] ${
+              className={`material-symbols-outlined text-[20px] sm:text-[21px] ${
                 activeView === 'MAP' ? 'text-[#006c49]' : ''
               }`}
             >
@@ -388,16 +429,30 @@ export default function App() {
             <span>Mapa CR</span>
           </button>
 
+          {/* 4. BOTÓN CENTRAL: Registrar nuevo espécimen (UBICADO EXACTAMENTE DESPUÉS DEL MAPA, TOTALMENTE CENTRADO) */}
+          <button
+            onClick={() => {
+              setEditingSpecimen(null);
+              setPresetNewCoords(undefined);
+              setIsNewModalOpen(true);
+            }}
+            className="w-11 h-11 -mt-4 rounded-full bg-[#002217] hover:bg-[#0f382a] text-[#6cf8bb] flex items-center justify-center shadow-xl active:scale-95 transition-all cursor-pointer border-2 border-white flex-shrink-0"
+            title="Registrar nuevo espécimen con GPS o mapa offline"
+          >
+            <span className="material-symbols-outlined text-[24px]">add</span>
+          </button>
+
+          {/* 5. Colección */}
           <button
             onClick={() => setActiveView('CATALOG')}
-            className={`flex flex-col items-center gap-0.5 text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer ${
               activeView === 'CATALOG'
                 ? 'text-[#002217] scale-105 font-bold'
                 : 'text-[#717974] hover:text-[#191c19]'
             }`}
           >
             <span
-              className={`material-symbols-outlined text-[21px] ${
+              className={`material-symbols-outlined text-[20px] sm:text-[21px] ${
                 activeView === 'CATALOG' ? 'text-[#006c49]' : ''
               }`}
             >
@@ -406,13 +461,32 @@ export default function App() {
             <span>Colección</span>
           </button>
 
-          {/* Respaldo JSON y Sincronización */}
+          {/* 6. Estadística */}
+          <button
+            onClick={() => setActiveView('STATISTICS')}
+            className={`flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] font-semibold transition-all cursor-pointer ${
+              activeView === 'STATISTICS'
+                ? 'text-[#002217] scale-105 font-bold'
+                : 'text-[#717974] hover:text-[#191c19]'
+            }`}
+          >
+            <span
+              className={`material-symbols-outlined text-[20px] sm:text-[21px] ${
+                activeView === 'STATISTICS' ? 'text-[#006c49]' : ''
+              }`}
+            >
+              analytics
+            </span>
+            <span>Estadística</span>
+          </button>
+
+          {/* 7. Respaldo */}
           <button
             onClick={() => setIsSyncModalOpen(true)}
-            className="flex flex-col items-center gap-0.5 text-[11px] font-semibold text-[#717974] hover:text-[#002217] transition-all cursor-pointer"
+            className="flex flex-col items-center gap-0.5 text-[10px] sm:text-[11px] font-semibold text-[#717974] hover:text-[#002217] transition-all cursor-pointer"
             title="Respaldo JSON y Sincronización multi-dispositivo"
           >
-            <span className="material-symbols-outlined text-[21px] text-[#006c49]">sync_saved_locally</span>
+            <span className="material-symbols-outlined text-[20px] sm:text-[21px] text-[#006c49]">sync_saved_locally</span>
             <span>Respaldo</span>
           </button>
         </div>

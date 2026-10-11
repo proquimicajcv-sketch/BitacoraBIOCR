@@ -5,6 +5,7 @@ interface CoverLandingViewProps {
   onOpenDetail: () => void;
   onOpenMap: () => void;
   onOpenCatalog: () => void;
+  onOpenStatistics?: () => void;
   onOpenNewSpecimen: () => void;
   onOpenSyncBackup: () => void;
   specimensCount: number;
@@ -15,6 +16,7 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
   onOpenDetail,
   onOpenMap,
   onOpenCatalog,
+  onOpenStatistics,
   onOpenNewSpecimen,
   onOpenSyncBackup,
   specimensCount,
@@ -37,7 +39,7 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
       </div>
 
       {/* Top Header / Heraldic Bar */}
-      <header className="relative z-10 px-5 pt-6 pb-2 max-w-4xl mx-auto w-full flex items-center justify-between">
+      <header className="relative z-10 px-5 pt-5 pb-2 max-w-4xl mx-auto w-full flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-[#6cf8bb] shadow-lg">
             <span className="material-symbols-outlined text-[24px]">forest</span>
@@ -52,25 +54,52 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onOpenSyncBackup}
-          className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-          title="Respaldo JSON y persistencia multi-dispositivo"
-        >
-          <span className="material-symbols-outlined text-[16px]">sync_saved_locally</span>
-          <span className="hidden sm:inline">Respaldo JSON</span>
-        </button>
+        {/* Autor y Creador Pill en Header */}
+        <div className="flex items-center gap-2">
+          <div className="px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md border border-[#6cf8bb]/40 flex items-center gap-2 shadow-sm transition-all">
+            <div className="w-5 h-5 rounded-full bg-[#6cf8bb] text-[#002217] flex items-center justify-center">
+              <span className="material-symbols-outlined text-[13px] font-bold">engineering</span>
+            </div>
+            <div className="flex flex-col leading-tight">
+              <span className="text-[9px] text-[#a5d0bc] uppercase tracking-wider font-semibold font-mono">
+                Elaborado por
+              </span>
+              <span className="text-xs font-bold text-white tracking-wide">
+                Ing. Jorge Carvajal V.
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={onOpenSyncBackup}
+            className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            title="Respaldo JSON y persistencia multi-dispositivo"
+          >
+            <span className="material-symbols-outlined text-[16px]">sync_saved_locally</span>
+            <span className="hidden sm:inline">Respaldo JSON</span>
+          </button>
+        </div>
       </header>
 
       {/* Central Hero Body */}
-      <div className="relative z-10 px-5 py-6 max-w-4xl mx-auto w-full flex flex-col gap-6 my-auto">
+      <div className="relative z-10 px-5 py-5 max-w-4xl mx-auto w-full flex flex-col gap-5 my-auto">
         {/* Main Title & Scientific Identity */}
-        <div className="flex flex-col gap-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#6cf8bb]/15 border border-[#6cf8bb]/30 w-fit backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full bg-[#6cf8bb] animate-pulse" />
-            <span className="text-xs font-mono font-bold text-[#6cf8bb] uppercase tracking-wider">
-              Canopy Field Log • Versión de Campo
-            </span>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#6cf8bb]/15 border border-[#6cf8bb]/30 w-fit backdrop-blur-md">
+              <span className="w-2 h-2 rounded-full bg-[#6cf8bb] animate-pulse" />
+              <span className="text-xs font-mono font-bold text-[#6cf8bb] uppercase tracking-wider">
+                Canopy Field Log • Versión de Campo
+              </span>
+            </div>
+
+            {/* Prominente insignia de autor */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#003824]/80 border border-[#6cf8bb]/50 w-fit backdrop-blur-md shadow-sm">
+              <span className="material-symbols-outlined text-[15px] text-[#6cf8bb]">workspace_premium</span>
+              <span className="text-xs text-white font-medium">
+                Elaborado por: <strong className="text-[#6cf8bb] font-bold">Ing. Jorge Carvajal V.</strong>
+              </span>
+            </div>
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white drop-shadow-md">
@@ -79,7 +108,7 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
 
           <p className="text-sm sm:text-base text-[#e1e3dd] max-w-xl font-light leading-relaxed">
             Plataforma científica para registro biológico en Costa Rica con coordenadas WGS84,
-            zonas de vida Holdridge, bioacústica de campo, asistencia IA y exportación estándar Darwin Core.
+            zonas de vida Holdridge, conteos estadísticos, bioacústica de campo, asistencia IA y exportación estándar Darwin Core.
           </p>
         </div>
 
@@ -117,46 +146,46 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
           </div>
         </div>
 
-        {/* Primary Interactive Action Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {/* Card 1: Nuevo Registro */}
+        {/* Primary Interactive Action Grid (2x2 on desktop) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Card 1: Mapa SIG */}
           <button
-            onClick={onOpenNewSpecimen}
-            className="p-4 rounded-2xl bg-[#002e20]/80 hover:bg-[#003d2b] border border-[#6cf8bb]/30 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
+            onClick={onOpenMap}
+            className="p-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
           >
-            <div className="w-9 h-9 rounded-xl bg-[#6cf8bb]/20 text-[#6cf8bb] flex items-center justify-center group-hover:bg-[#6cf8bb] group-hover:text-[#002116] transition-colors">
-              <span className="material-symbols-outlined text-[20px]">add_location_alt</span>
+            <div className="w-8 h-8 rounded-xl bg-white/15 text-white flex items-center justify-center group-hover:bg-white group-hover:text-[#002116] transition-colors">
+              <span className="material-symbols-outlined text-[19px]">explore</span>
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-sm text-white flex items-center gap-1">
-                Nuevo Registro en Campo
-                <span className="material-symbols-outlined text-[16px] text-[#6cf8bb] group-hover:translate-x-1 transition-transform">
+              <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1">
+                Mapa SIG Costa Rica
+                <span className="material-symbols-outlined text-[15px] text-white group-hover:translate-x-1 transition-transform">
                   arrow_forward
                 </span>
               </span>
-              <span className="text-xs text-[#a5d0bc]">
-                Captura GPS en vivo o selección manual en mapa offline
+              <span className="text-[11px] text-[#c1c8c3] line-clamp-2">
+                Capas satelitales y zonas biológicas
               </span>
             </div>
           </button>
 
-          {/* Card 2: Mapa SIG */}
+          {/* Card 2: Registrar Nuevo en Campo (Ubicado después del Mapa) */}
           <button
-            onClick={onOpenMap}
-            className="p-4 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
+            onClick={onOpenNewSpecimen}
+            className="p-3.5 rounded-2xl bg-[#002e20]/80 hover:bg-[#003d2b] border border-[#6cf8bb]/30 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
           >
-            <div className="w-9 h-9 rounded-xl bg-white/15 text-white flex items-center justify-center group-hover:bg-white group-hover:text-[#002116] transition-colors">
-              <span className="material-symbols-outlined text-[20px]">explore</span>
+            <div className="w-8 h-8 rounded-xl bg-[#6cf8bb]/20 text-[#6cf8bb] flex items-center justify-center group-hover:bg-[#6cf8bb] group-hover:text-[#002116] transition-colors">
+              <span className="material-symbols-outlined text-[19px]">add_location_alt</span>
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-sm text-white flex items-center gap-1">
-                Mapa SIG Costa Rica
-                <span className="material-symbols-outlined text-[16px] text-white group-hover:translate-x-1 transition-transform">
+              <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1">
+                Registrar Nuevo en Campo
+                <span className="material-symbols-outlined text-[15px] text-[#6cf8bb] group-hover:translate-x-1 transition-transform">
                   arrow_forward
                 </span>
               </span>
-              <span className="text-xs text-[#c1c8c3]">
-                Puntos calientes biológicos, capas satelitales y curvas de nivel
+              <span className="text-[11px] text-[#a5d0bc] line-clamp-2">
+                Captura GPS en vivo y zonas Holdridge
               </span>
             </div>
           </button>
@@ -164,48 +193,69 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
           {/* Card 3: Colección & Catálogo */}
           <button
             onClick={onOpenCatalog}
-            className="p-4 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
+            className="p-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
           >
-            <div className="w-9 h-9 rounded-xl bg-white/15 text-white flex items-center justify-center group-hover:bg-white group-hover:text-[#002116] transition-colors">
-              <span className="material-symbols-outlined text-[20px]">grid_view</span>
+            <div className="w-8 h-8 rounded-xl bg-white/15 text-white flex items-center justify-center group-hover:bg-white group-hover:text-[#002116] transition-colors">
+              <span className="material-symbols-outlined text-[19px]">grid_view</span>
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-sm text-white flex items-center gap-1">
-                Colección &amp; Catálogo ({specimensCount})
-                <span className="material-symbols-outlined text-[16px] text-white group-hover:translate-x-1 transition-transform">
+              <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1">
+                Colección ({specimensCount})
+                <span className="material-symbols-outlined text-[15px] text-white group-hover:translate-x-1 transition-transform">
                   arrow_forward
                 </span>
               </span>
-              <span className="text-xs text-[#c1c8c3]">
-                Filtros por anfibios, aves, reptiles, mamíferos e insectos
+              <span className="text-[11px] text-[#c1c8c3] line-clamp-2">
+                Fichas de fauna y flora con filtros
+              </span>
+            </div>
+          </button>
+
+          {/* Card 4: Estadísticas & Conteo */}
+          <button
+            onClick={onOpenStatistics || onOpenCatalog}
+            className="p-3.5 rounded-2xl bg-[#004d33]/60 hover:bg-[#005a3c] border border-[#6cf8bb]/40 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
+          >
+            <div className="w-8 h-8 rounded-xl bg-[#6cf8bb]/20 text-[#6cf8bb] flex items-center justify-center group-hover:bg-[#6cf8bb] group-hover:text-[#002116] transition-colors">
+              <span className="material-symbols-outlined text-[19px]">analytics</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1">
+                Estadísticas &amp; Conteos
+                <span className="material-symbols-outlined text-[15px] text-[#6cf8bb] group-hover:translate-x-1 transition-transform">
+                  arrow_forward
+                </span>
+              </span>
+              <span className="text-[11px] text-[#a5d0bc] line-clamp-2">
+                Mamíferos, anfibios, aves, reptiles y gráficas
               </span>
             </div>
           </button>
         </div>
       </div>
 
-      {/* Footer Scientific Status Bar */}
-      <footer className="relative z-10 px-5 py-4 max-w-4xl mx-auto w-full border-t border-white/10 bg-black/30 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs text-[#a5d0bc]">
+      {/* Footer Scientific Status Bar con Crédito Explícito */}
+      <footer className="relative z-10 px-5 py-3 max-w-4xl mx-auto w-full border-t border-white/10 bg-black/40 backdrop-blur-md flex flex-wrap items-center justify-between gap-3 text-xs text-[#a5d0bc]">
         <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-1.5 font-mono">
-            <span className="material-symbols-outlined text-[16px] text-[#6cf8bb]">my_location</span>
-            <span>CR: [9.7489° N, 83.7534° W]</span>
+          <div className="flex items-center gap-1.5 font-medium text-white">
+            <span className="material-symbols-outlined text-[16px] text-[#6cf8bb]">engineering</span>
+            <span>Elaborado por: <strong className="text-[#6cf8bb]">Ing. Jorge Carvajal V.</strong></span>
           </div>
 
-          <div className="flex items-center gap-1.5 font-mono">
-            <span className="material-symbols-outlined text-[16px] text-[#6cf8bb]">landscape</span>
-            <span>13 Zonas de Vida Holdridge</span>
+          <div className="flex items-center gap-1.5 font-mono text-[11px]">
+            <span className="material-symbols-outlined text-[15px] text-[#6cf8bb]">landscape</span>
+            <span>13 Zonas Holdridge CR</span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-[16px] text-[#6cf8bb]">offline_pin</span>
-            <span>Respaldo JSON 100% Offline</span>
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <span className="material-symbols-outlined text-[15px] text-[#6cf8bb]">offline_pin</span>
+            <span>Respaldo 100% Offline</span>
           </div>
         </div>
 
         <button
           onClick={onOpenSyncBackup}
-          className="text-[#6cf8bb] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+          className="text-[#6cf8bb] hover:underline font-semibold flex items-center gap-1 cursor-pointer text-xs"
         >
           <span className="material-symbols-outlined text-[15px]">database</span>
           <span>Gestor de Datos JSON</span>

@@ -11,7 +11,9 @@ import { AudioRecordingModal } from './AudioRecordingModal';
 interface SpecimenDetailViewProps {
   specimen: SpecimenRecord;
   onBack: () => void;
+  onGoHome?: () => void;
   onEdit: (specimen: SpecimenRecord) => void;
+  onSaveSpecimen?: (specimen: SpecimenRecord) => void;
   onOpenMap: (specimen: SpecimenRecord) => void;
   onOpenDarwinCoreModal: (specimen: SpecimenRecord) => void;
   onDelete: (specimenId: string) => void;
@@ -21,7 +23,9 @@ interface SpecimenDetailViewProps {
 export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   specimen,
   onBack,
+  onGoHome,
   onEdit,
+  onSaveSpecimen,
   onOpenMap,
   onOpenDarwinCoreModal,
   onDelete,
@@ -33,6 +37,16 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; label: string; desc: string } | null>(null);
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Direct Sighting Modal State
+  const [isAddSightingModalOpen, setIsAddSightingModalOpen] = useState(false);
+  const [sightingLocality, setSightingLocality] = useState(specimen.georeference.locality || '');
+  const [sightingCount, setSightingCount] = useState(1);
+  const [sightingWeather, setSightingWeather] = useState('Soleado y cálido, 26°C');
+  const [sightingMicrohabitat, setSightingMicrohabitat] = useState(specimen.georeference.microhabitat || '');
+  const [sightingBehavior, setSightingBehavior] = useState('');
+  const [sightingNotes, setSightingNotes] = useState('');
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [waveformHeights, setWaveformHeights] = useState<number[]>([
     8, 16, 28, 20, 12, 32, 24, 12, 8, 20, 28, 16, 8, 24, 12, 8,
   ]);
@@ -88,41 +102,123 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     }
   };
 
+  const handleOpenAddSighting = () => {
+    setSightingLocality(specimen.georeference.locality || '');
+    setSightingCount(1);
+    setSightingWeather('Soleado y cálido, 26°C');
+    setSightingMicrohabitat(specimen.georeference.microhabitat || '');
+    setSightingBehavior('');
+    setSightingNotes('');
+    setIsAddSightingModalOpen(true);
+  };
+
+  const handleSaveDirectSighting = (e: React.FormEvent) => {
+    e.preventDefault();
+    const dateNow = new Date();
+    const formattedDate = dateNow.toISOString().slice(0, 10);
+    const formattedTimestamp =
+      dateNow.toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' }) +
+      ', ' +
+      dateNow.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }) +
+      ' CST';
+
+    const newSighting = {
+      id: 'sight-' + Date.now(),
+      timestamp: formattedTimestamp,
+      date: formattedDate,
+      observer: 'Ing. Jorge Carvajal V.',
+      locality: sightingLocality.trim() || specimen.georeference.locality,
+      count: Number(sightingCount) || 1,
+      individualsCount: Number(sightingCount) || 1,
+      microhabitat: sightingMicrohabitat.trim() || specimen.georeference.microhabitat,
+      weather: sightingWeather.trim(),
+      weatherConditions: sightingWeather.trim(),
+      behaviorObserved: sightingBehavior.trim() || 'Avistamiento de espécimen activo en su entorno silvestre.',
+      notes: sightingNotes.trim(),
+    };
+
+    const updatedSightings = [newSighting, ...(specimen.sightings || [])];
+    const updatedSpecimen: SpecimenRecord = {
+      ...specimen,
+      sightings: updatedSightings,
+    };
+
+    if (onSaveSpecimen) {
+      onSaveSpecimen(updatedSpecimen);
+    }
+
+    setIsAddSightingModalOpen(false);
+    setSaveSuccessMsg('¡Nuevo avistamiento registrado y guardado permanentemente!');
+    setTimeout(() => setSaveSuccessMsg(null), 4000);
+  };
+
+  const handleDeleteSighting = (sightingId: string) => {
+    if (window.confirm('¿Seguro que deseas eliminar este avistamiento?')) {
+      const updatedSightings = (specimen.sightings || []).filter((s) => s.id !== sightingId);
+      const updatedSpecimen: SpecimenRecord = {
+        ...specimen,
+        sightings: updatedSightings,
+      };
+      if (onSaveSpecimen) {
+        onSaveSpecimen(updatedSpecimen);
+      }
+      setSaveSuccessMsg('Avistamiento eliminado y cambios guardados.');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+    }
+  };
+
   return (
     <div className="flex flex-col w-full min-h-screen bg-[#f8faf4] pb-20">
       {/* Top Fixed Header */}
       <header className="sticky top-0 inset-x-0 z-50 bg-[#f8faf4]/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
         <div className="h-16 px-4 flex items-center justify-between gap-2 max-w-3xl mx-auto w-full">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <button
               aria-label="Volver"
               onClick={onBack}
-              className="w-11 h-11 rounded-full flex items-center justify-center text-[#191c19] hover:bg-[#e7e9e3] transition-colors flex-shrink-0 cursor-pointer"
+              className="w-10 h-10 rounded-full flex items-center justify-center text-[#191c19] hover:bg-[#e7e9e3] transition-colors flex-shrink-0 cursor-pointer"
+              title="Volver atrás"
             >
-              <span className="material-symbols-outlined text-[24px]">arrow_back</span>
+              <span className="material-symbols-outlined text-[22px]">arrow_back</span>
             </button>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <span className="material-symbols-outlined text-[#006c49] text-[24px]">eco</span>
-            </div>
-            <h1 className="font-bold text-[18px] text-[#191c19] tracking-tight truncate">
-              Detalle De Espécimen
-            </h1>
+
+            {/* Ícono superior para regresar SIEMPRE a la página de inicio (Portada) */}
+            <button
+              onClick={onGoHome || onBack}
+              className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-[#e7e9e3] transition-all cursor-pointer group"
+              title="Ir a Página de Inicio / Portada"
+            >
+              <div className="w-8 h-8 rounded-lg bg-[#002217] flex items-center justify-center text-[#6cf8bb] group-hover:bg-[#006c49] transition-colors shadow-sm">
+                <span className="material-symbols-outlined text-[19px]">cottage</span>
+              </div>
+              <div className="flex flex-col text-left leading-tight">
+                <span className="text-[9px] text-[#006c49] font-mono font-bold uppercase tracking-wider">Inicio</span>
+                <span className="font-bold text-sm text-[#002217] truncate group-hover:text-[#006c49] transition-colors">
+                  BioBitácora CR
+                </span>
+              </div>
+            </button>
           </div>
+
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Botón explícito para regresar a Inicio */}
+            <button
+              onClick={onGoHome || onBack}
+              className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-[#f2f4ee] border border-[#c1c8c3] text-xs text-[#002217] font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+              title="Regresar a Inicio"
+            >
+              <span className="material-symbols-outlined text-[16px] text-[#006c49]">home</span>
+              <span className="hidden sm:inline">Inicio</span>
+            </button>
+
             {/* Quick Delete Header Button */}
             <button
               onClick={() => setShowDeleteConfirm(true)}
               className="w-9 h-9 rounded-full bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors cursor-pointer"
               title="Eliminar este registro"
             >
-              <span className="material-symbols-outlined text-[20px]">delete</span>
+              <span className="material-symbols-outlined text-[19px]">delete</span>
             </button>
-            <div
-              className="w-8 h-8 rounded-full bg-[#002217] flex items-center justify-center flex-shrink-0 text-white cursor-pointer"
-              title="Curador: Biol. M. Cordero (UCR-MZ)"
-            >
-              <span className="material-symbols-outlined text-white text-[18px]">person</span>
-            </div>
           </div>
         </div>
       </header>
@@ -634,17 +730,30 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
           </section>
         )}
 
+        {/* Success toast notification */}
+        {saveSuccessMsg && (
+          <div className="mx-4 mt-2 p-3 rounded-xl bg-[#002217] text-[#6cf8bb] text-xs font-bold flex items-center justify-between shadow-lg border border-[#6cf8bb]/40 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px]">check_circle</span>
+              <span>{saveSuccessMsg}</span>
+            </div>
+            <button onClick={() => setSaveSuccessMsg(null)} className="text-white hover:text-[#6cf8bb]">
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        )}
+
         {/* Registro de Avistamientos / Entradas de Vistas */}
         <section className="px-4 mt-4">
           <div className="p-4 rounded-xl bg-white shadow-sm flex flex-col gap-3 border border-[#e1e3dd]/80">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="font-bold text-[16px] text-[#002217] flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[#006c49] text-[20px]">visibility</span>
-                Historial de Avistamientos &amp; Entradas de Vistas ({specimen.sightings?.length || 1})
+                Historial de Avistamientos &amp; Entradas ({specimen.sightings?.length || 1})
               </h3>
               <button
-                onClick={() => onEdit(specimen)}
-                className="text-xs text-[#006c49] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                onClick={handleOpenAddSighting}
+                className="px-3 py-1.5 rounded-lg bg-[#002217] hover:bg-[#003d2b] text-[#6cf8bb] text-xs font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[16px]">add_circle</span>
                 <span>+ Nuevo Avistamiento</span>
@@ -656,25 +765,34 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 specimen.sightings.map((sight) => (
                   <div
                     key={sight.id}
-                    className="p-3 rounded-lg bg-[#f2f4ee] border border-[#e1e3dd] flex flex-col gap-1 text-xs"
+                    className="p-3 rounded-lg bg-[#f2f4ee] border border-[#e1e3dd] flex flex-col gap-1.5 text-xs hover:border-[#006c49]/40 transition-colors"
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[#002217] flex items-center gap-1">
                         <span className="material-symbols-outlined text-[14px] text-[#006c49]">pin_drop</span>
                         {sight.locality}
                       </span>
-                      <span className="font-mono text-[10px] text-[#006c49] font-bold bg-white px-2 py-0.5 rounded border border-[#e1e3dd]">
-                        N={sight.count} ind. • {sight.timestamp}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-[#006c49] font-bold bg-white px-2 py-0.5 rounded border border-[#e1e3dd]">
+                          N={sight.count || sight.individualsCount || 1} ind. • {sight.timestamp}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteSighting(sight.id)}
+                          className="text-[#717974] hover:text-red-600 p-0.5 rounded transition-colors cursor-pointer"
+                          title="Eliminar este avistamiento"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                      </div>
                     </div>
                     <p className="text-[#191c19] mt-0.5">{sight.behaviorObserved}</p>
                     {sight.microhabitat && (
                       <span className="text-[11px] text-[#414844]">
-                        Hábitat: {sight.microhabitat} {sight.weather ? `• ${sight.weather}` : ''}
+                        Hábitat: {sight.microhabitat} {sight.weather || sight.weatherConditions ? `• ${sight.weather || sight.weatherConditions}` : ''}
                       </span>
                     )}
                     {sight.notes && (
-                      <p className="text-[11px] text-[#717974] italic mt-0.5 border-t border-[#e1e3dd] pt-1">
+                      <p className="text-[11px] text-[#717974] italic border-t border-[#e1e3dd] pt-1">
                         Nota: {sight.notes}
                       </p>
                     )}
@@ -684,8 +802,8 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 <div className="p-3 rounded-lg bg-[#f2f4ee] text-xs text-[#414844] flex items-center justify-between">
                   <span>Primer avistamiento de colecta registrado ({specimen.collectionDate}).</span>
                   <button
-                    onClick={() => onEdit(specimen)}
-                    className="text-[#006c49] font-bold hover:underline"
+                    onClick={handleOpenAddSighting}
+                    className="text-[#006c49] font-bold hover:underline cursor-pointer"
                   >
                     Añadir nuevo
                   </button>
@@ -786,6 +904,143 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 Sí, Eliminar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Directo: Registrar Nuevo Avistamiento */}
+      {isAddSightingModalOpen && (
+        <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl p-5 shadow-2xl flex flex-col gap-3.5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#e1e3dd] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#002217] text-[#6cf8bb] flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[18px]">add_location_alt</span>
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-[#002217]">
+                    Nuevo Avistamiento en Campo
+                  </h4>
+                  <span className="text-[11px] text-[#717974] italic">
+                    {specimen.scientificName}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddSightingModalOpen(false)}
+                className="w-8 h-8 rounded-full text-[#717974] hover:bg-[#f0f2ec] flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDirectSighting} className="flex flex-col gap-3">
+              {/* Localidad */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                  Localidad / Punto de Avistamiento *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={sightingLocality}
+                  onChange={(e) => setSightingLocality(e.target.value)}
+                  placeholder="Ej: Sendero Río Sarapiquí..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                />
+              </div>
+
+              {/* Cantidad de Individuos y Clima */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                    Individuos (N) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={sightingCount}
+                    onChange={(e) => setSightingCount(Number(e.target.value) || 1)}
+                    className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs font-mono font-bold text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                    Clima / Temperatura
+                  </label>
+                  <input
+                    type="text"
+                    value={sightingWeather}
+                    onChange={(e) => setSightingWeather(e.target.value)}
+                    placeholder="Ej: Soleado 26°C"
+                    className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                  />
+                </div>
+              </div>
+
+              {/* Microhábitat */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                  Microhábitat / Estrato
+                </label>
+                <input
+                  type="text"
+                  value={sightingMicrohabitat}
+                  onChange={(e) => setSightingMicrohabitat(e.target.value)}
+                  placeholder="Ej: Envés de hoja de Heliconia sobre charca..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                />
+              </div>
+
+              {/* Comportamiento Observado */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                  Comportamiento Observado *
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={sightingBehavior}
+                  onChange={(e) => setSightingBehavior(e.target.value)}
+                  placeholder="Ej: Vocalizando activamente para delimitación territorial..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                />
+              </div>
+
+              {/* Notas de Campo */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                  Notas Adicionales
+                </label>
+                <textarea
+                  rows={2}
+                  value={sightingNotes}
+                  onChange={(e) => setSightingNotes(e.target.value)}
+                  placeholder="Detalles morfológicos, presencia de crías, depredadores cercanos..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                />
+              </div>
+
+              {/* Botones de acción */}
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#e1e3dd]">
+                <button
+                  type="button"
+                  onClick={() => setIsAddSightingModalOpen(false)}
+                  className="py-2.5 px-3 rounded-xl border border-[#c1c8c3] text-xs font-bold text-[#414844] hover:bg-[#f0f2ec] cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="py-2.5 px-3 rounded-xl bg-[#002217] hover:bg-[#003d2b] text-[#6cf8bb] text-xs font-bold flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">save</span>
+                  <span>Guardar Avistamiento</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

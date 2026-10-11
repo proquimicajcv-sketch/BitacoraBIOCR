@@ -199,6 +199,19 @@ export const INITIAL_SPECIMENS: SpecimenRecord[] = [
     },
 
     additionalPhotos: [],
+    sightings: [
+      {
+        id: 'sight-pumilio-1',
+        timestamp: '18 Nov 2024, 09:45 CST',
+        date: '2024-11-18',
+        observer: 'Dra. K. Solano (INBio)',
+        locality: 'Sendero Cantarrana, La Selva',
+        individualsCount: 2,
+        weatherConditions: 'Soleado tras llovizna matutina, 26°C',
+        behaviorObserved: 'Hembra transportando renacuajo a axila de bromelia.',
+        notes: 'Coloración típica morfotipo Blue Jeans.',
+      },
+    ],
   },
   {
     id: 'cr-bio-2024-7731',
@@ -273,6 +286,19 @@ export const INITIAL_SPECIMENS: SpecimenRecord[] = [
     },
 
     additionalPhotos: [],
+    sightings: [
+      {
+        id: 'sight-quetzal-1',
+        timestamp: '05 Dic 2024, 06:30 CST',
+        date: '2024-12-05',
+        observer: 'M.Sc. R. Quesada (UCR-SBO)',
+        locality: 'San Gerardo de Dota, Talamanca',
+        individualsCount: 2,
+        weatherConditions: 'Neblina matutina fría, 11°C',
+        behaviorObserved: 'Pareja en árbol de aguacatillo silvestre, macho vocalizando.',
+        notes: 'Plumaje reproductivo completo en macho.',
+      },
+    ],
   },
   {
     id: 'cr-bio-2024-6420',
@@ -338,6 +364,18 @@ export const INITIAL_SPECIMENS: SpecimenRecord[] = [
     },
 
     additionalPhotos: [],
+    sightings: [
+      {
+        id: 'sight-morpho-1',
+        timestamp: '12 Ene 2025, 11:15 CST',
+        date: '2025-01-12',
+        observer: 'Ing. T. Montero',
+        locality: 'Reserva Monteverde',
+        individualsCount: 3,
+        weatherConditions: 'Soleado con viento leve, 21°C',
+        behaviorObserved: 'Vuelo ondulante de patrullaje a lo largo del sendero.',
+      },
+    ],
   },
   {
     id: 'cr-bio-2025-0199',
@@ -404,5 +442,172 @@ export const INITIAL_SPECIMENS: SpecimenRecord[] = [
     },
 
     additionalPhotos: [],
+    sightings: [
+      {
+        id: 'sight-tapir-1',
+        timestamp: '02 Feb 2025, 17:20 CST',
+        date: '2025-02-02',
+        observer: 'Guardaparques ACOSA / SINAC',
+        locality: 'Estación Sirena, Corcovado',
+        individualsCount: 1,
+        weatherConditions: 'Atardecer cálido, 28°C',
+        behaviorObserved: 'Adulto solitario cruzando el banco de arena hacia el río.',
+      },
+    ],
+  },
+  {
+    id: 'cr-bio-2025-0312',
+    catalogNumber: 'CAT. CR-BIO-2025-0312',
+    scientificName: 'Bothriechis schlegelii',
+    commonName: 'Bocaracá de pestañas / Eyelash Palm-Pitviper',
+    taxonGroup: 'Reptilia',
+    realm: 'Neotropical',
+    collector: 'Herpetólogo C. Vargas (ICP-UCR)',
+    collectionDate: '15 Febrero 2025',
+    collectionTime: '20:40 CST',
+    institutionCode: 'ICP-UCR',
+    curationStatus: 'Verificada',
+    darwinCoreSync: true,
+    fieldFolio: 'Ficha Folio #189',
+
+    iucnStatus: {
+      code: 'LC',
+      label: 'Preocupación Menor',
+      trend: 'Población Estable',
+    },
+    citesStatus: {
+      appendix: 'Apéndice III',
+      distribution: 'Bosques Tropicales Húmedos de Costa Rica',
+    },
+
+    taxonomy: {
+      kingdom: 'Animalia',
+      phylum: 'Chordata',
+      class: 'Reptilia',
+      order: 'Squamata',
+      family: 'Viperidae',
+      genus: 'Bothriechis',
+      species: 'schlegelii',
+      taxonId: '3941',
+    },
+
+    heroImage: 'https://images.unsplash.com/photo-1531386151447-fd76ad50012f?auto=format&fit=crop&w=1000&q=80',
+    heroImageDescription: 'Víbora arborícola enrollada en rama baja con escamas supraciliares modificadas en forma de espinas pestañosas.',
+
+    georeference: {
+      latitude: 10.3541,
+      longitude: -84.0322,
+      latitudeDMS: '10°21\'14.8" N',
+      longitudeDMS: '84°01\'55.9" W',
+      datum: 'WGS84',
+      accuracyMeters: 3.5,
+      elevationMeters: 450,
+      locality: 'Refugio de Vida Silvestre Mixto Maquenque',
+      province: 'Alajuela, Costa Rica',
+      conservationArea: 'Área de Conservación Arenal Huetar Norte (ACAHN)',
+      lifeZone: 'Bosque Tropical Húmedo (bmh-T)',
+      microhabitat: 'Palma espinosa Astrocaryum albaricoque a 1.2 m del suelo',
+    },
+
+    morphometrics: {
+      totalLengthMm: 580,
+      weightGrams: 145,
+      colorationAndAnatomy: 'Morfotipo oropel amarillo dorado vibrante con motas irregulares rojizas. Cola prensil distalmente oscura. Escamas pestañosas supraciliares prominentes.',
+      ethologyAndReproduction: 'Depredador de emboscada posicionado en forma de "S" inmóvil en espera de anfibios o pequeños roedores nocturnos.',
+      sympatricSpecies: [
+        { scientificName: 'Agalychnis callidryas', commonName: 'Rana de ojos rojos', count: 1 },
+      ],
+    },
+
+    additionalPhotos: [],
+    sightings: [
+      {
+        id: 'sight-viper-1',
+        timestamp: '15 Feb 2025, 20:40 CST',
+        date: '2025-02-15',
+        observer: 'Herpetólogo C. Vargas',
+        locality: 'Maquenque, Alajuela',
+        individualsCount: 1,
+        weatherConditions: 'Noche húmeda, 24°C',
+        behaviorObserved: 'Postura de emboscada sobre peciolo de palma.',
+      },
+    ],
+  },
+  {
+    id: 'cr-bio-2025-0455',
+    catalogNumber: 'CAT. CR-BIO-2025-0455',
+    scientificName: 'Guarianthe skinneri',
+    commonName: 'Guaria Morada / Costa Rican National Flower',
+    taxonGroup: 'Plantae',
+    realm: 'Neotropical',
+    collector: 'Botánica E. Castro (JBL-UCR)',
+    collectionDate: '01 Marzo 2025',
+    collectionTime: '10:00 CST',
+    institutionCode: 'JBL-UCR',
+    curationStatus: 'Verificada',
+    darwinCoreSync: true,
+    fieldFolio: 'Ficha Folio #220',
+
+    iucnStatus: {
+      code: 'VU',
+      label: 'Vulnerable',
+      trend: 'Población Decreciente',
+    },
+    citesStatus: {
+      appendix: 'Apéndice I',
+      distribution: 'Epífita Nativa de Costa Rica',
+    },
+
+    taxonomy: {
+      kingdom: 'Plantae',
+      phylum: 'Tracheophyta',
+      class: 'Liliopsida',
+      order: 'Asparagales',
+      family: 'Orchidaceae',
+      genus: 'Guarianthe',
+      species: 'skinneri',
+      taxonId: '5129',
+    },
+
+    heroImage: 'https://images.unsplash.com/photo-1526047932273-341f2a7631f9?auto=format&fit=crop&w=1000&q=80',
+    heroImageDescription: 'Orquídea epífita en floración con tépalos púrpura-morados y labelo blanco contrastante.',
+
+    georeference: {
+      latitude: 9.8732,
+      longitude: -83.9145,
+      latitudeDMS: '9°52\'23.5" N',
+      longitudeDMS: '83°54\'52.2" W',
+      datum: 'WGS84',
+      accuracyMeters: 4.0,
+      elevationMeters: 1350,
+      locality: 'Jardín Botánico Lankester, Paraíso de Cartago',
+      province: 'Cartago, Costa Rica',
+      conservationArea: 'Área de Conservación Cordillera Volcánica Central (ACCVC)',
+      lifeZone: 'Bosque Húmedo Premontano (bh-PM)',
+      microhabitat: 'Horqueta de árbol de Guachipelín (Diphysa americana) a 4 m de altura',
+    },
+
+    morphometrics: {
+      totalLengthMm: 350,
+      colorationAndAnatomy: 'Pseudobulbos fusiformes bicaules. Inflorescencia terminal con 8 flores violeta-púrpura de 8 cm de diámetro con garganta blanca.',
+      ethologyAndReproduction: 'Floración estival sincrónica; polinizada por abejas euglosinas (Euglossini).',
+      sympatricSpecies: [
+        { scientificName: 'Tillandsia insignis', commonName: 'Bromelia epífita', count: 4 },
+      ],
+    },
+
+    additionalPhotos: [],
+    sightings: [
+      {
+        id: 'sight-guaria-1',
+        timestamp: '01 Mar 2025, 10:00 CST',
+        date: '2025-03-01',
+        observer: 'Botánica E. Castro',
+        locality: 'Paraíso de Cartago',
+        individualsCount: 5,
+        weatherConditions: 'Soleado fresco, 20°C',
+        behaviorObserved: 'Floración masiva de colonia epífita sobre tronco viejo.',
+      },
+    ],
   },
 ];
