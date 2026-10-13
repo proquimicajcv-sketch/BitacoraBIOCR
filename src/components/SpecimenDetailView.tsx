@@ -337,6 +337,35 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     }
   };
 
+  const handleDirectPhotoUpload = (photoId: string, file: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (typeof ev.target?.result === 'string') {
+        const newUrl = ev.target.result;
+        const updatedPhotos = (specimen.additionalPhotos || []).map((p) => {
+          if (p.id === photoId) {
+            return {
+              ...p,
+              url: newUrl,
+            };
+          }
+          return p;
+        });
+        const updatedSpecimen: SpecimenRecord = {
+          ...specimen,
+          additionalPhotos: updatedPhotos,
+        };
+        if (onSaveSpecimen) {
+          onSaveSpecimen(updatedSpecimen);
+        }
+        setSaveSuccessMsg('¡Fotografía sustituida y guardada exitosamente en este registro!');
+        setTimeout(() => setSaveSuccessMsg(null), 4000);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className="flex flex-col w-full min-h-screen bg-[#f8faf4] pb-20">
       {/* Top Fixed Header */}
@@ -915,19 +944,29 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
                     </div>
 
-                    {/* Botón para cambiar / sustituir foto */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingPhoto(photo);
-                        setEditPhotoUrl(photo.url);
-                        setEditPhotoDesc(photo.description);
+                    {/* Input de archivo nativo directo */}
+                    <input
+                      type="file"
+                      id={`file-input-${photo.id}`}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          handleDirectPhotoUpload(photo.id, file);
+                        }
                       }}
-                      className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-black/60 hover:bg-[#006c49] text-white flex items-center justify-center transition-colors shadow-sm cursor-pointer z-10"
-                      title="Sustituir o cambiar esta fotografía"
+                    />
+
+                    {/* Botón táctil directo para sustituir foto */}
+                    <label
+                      htmlFor={`file-input-${photo.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-1.5 right-1.5 w-8 h-8 rounded-full bg-[#002217] hover:bg-[#006c49] active:scale-90 text-[#6cf8bb] flex items-center justify-center transition-all shadow-md cursor-pointer z-20 border border-[#6cf8bb]/60 hover:border-white"
+                      title="Sustituir fotografía desde tu dispositivo"
                     >
-                      <span className="material-symbols-outlined text-[15px]">edit</span>
-                    </button>
+                      <span className="material-symbols-outlined text-[17px]">edit</span>
+                    </label>
 
                     <span className="absolute bottom-1.5 left-1.5 right-1.5 px-1.5 py-0.5 rounded bg-[#002217]/90 text-white font-mono text-[10px] truncate block pointer-events-none">
                       {photo.label}
