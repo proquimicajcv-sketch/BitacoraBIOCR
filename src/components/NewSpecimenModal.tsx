@@ -105,7 +105,7 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
   const [genus, setGenus] = useState(editingSpecimen?.taxonomy.genus || 'Agalychnis');
   const [family, setFamily] = useState(editingSpecimen?.taxonomy.family || 'Hylidae');
   const [collector, setCollector] = useState(
-    editingSpecimen?.collector || defaultCollector || 'Ing. Jorge Carvajal V.'
+    editingSpecimen?.collector || defaultCollector || 'Ing. Carvajal V.'
   );
   const [heroImage, setHeroImage] = useState(
     editingSpecimen?.heroImage ||

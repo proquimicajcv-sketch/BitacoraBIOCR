@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { SpecimenRecord } from '../types/specimen';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 interface SpecimenCatalogViewProps {
   specimens: SpecimenRecord[];
@@ -107,12 +108,13 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-[#414844]">
-                Elaborado por: <strong className="text-[#006c49] font-bold">Ing. Jorge Carvajal V.</strong>
+                Elaborado por: <strong className="text-[#006c49] font-bold">Ing. Carvajal V.</strong>
               </p>
             </div>
           </button>
 
           <div className="flex items-center gap-2">
+            <ThemeSwitcher compact />
             {onOpenStatistics && (
               <button
                 onClick={onOpenStatistics}

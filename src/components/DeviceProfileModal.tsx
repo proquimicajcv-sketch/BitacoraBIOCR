@@ -37,7 +37,7 @@ export const DeviceProfileModal: React.FC<DeviceProfileModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveObserverName(localObserver.trim() || 'Ing. Jorge Carvajal V.');
+    onSaveObserverName(localObserver.trim() || 'Ing. Carvajal V.');
     onSaveDeviceName(localDeviceName.trim() || 'Mi Dispositivo de Campo');
     setSaveToast(true);
     setTimeout(() => {
@@ -150,7 +150,7 @@ export const DeviceProfileModal: React.FC<DeviceProfileModalProps> = ({
                 required
                 value={localObserver}
                 onChange={(e) => setLocalObserver(e.target.value)}
-                placeholder="Ej: Ing. Jorge Carvajal V., Dra. Sofía Mora..."
+                placeholder="Ej: Ing. Carvajal V., Dra. Sofía Mora..."
                 className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] bg-white text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
               />
               <span className="text-[10px] text-[#717974] mt-0.5 block">

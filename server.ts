@@ -55,25 +55,8 @@ function getTargetDbFile(deviceId?: string): string {
 app.get('/api/database/specimens', (req: Request, res: Response): void => {
   try {
     const deviceId = req.query.deviceId as string | undefined;
-    const targetFile = getTargetDbFile(deviceId);
 
-    // If device file exists, return it
-    if (deviceId && fs.existsSync(targetFile)) {
-      const content = fs.readFileSync(targetFile, 'utf-8');
-      const data = JSON.parse(content);
-      if (Array.isArray(data) && data.length > 0) {
-        const stats = fs.statSync(targetFile);
-        res.json({
-          success: true,
-          data,
-          deviceId,
-          lastModified: stats.mtimeMs,
-        });
-        return;
-      }
-    }
-
-    // Fallback to base reference database
+    // Check central shared database first for cross-device synchronization
     if (fs.existsSync(DB_FILE)) {
       const content = fs.readFileSync(DB_FILE, 'utf-8');
       const data = JSON.parse(content);
@@ -82,12 +65,32 @@ app.get('/api/database/specimens', (req: Request, res: Response): void => {
         res.json({
           success: true,
           data,
-          deviceId: deviceId || 'base',
+          deviceId: deviceId || 'global',
           lastModified: Math.max(serverDbLastModified, stats.mtimeMs),
         });
         return;
       }
     }
+
+    // Fallback to device-specific file if central not found
+    if (deviceId) {
+      const targetFile = getTargetDbFile(deviceId);
+      if (fs.existsSync(targetFile)) {
+        const content = fs.readFileSync(targetFile, 'utf-8');
+        const data = JSON.parse(content);
+        if (Array.isArray(data) && data.length > 0) {
+          const stats = fs.statSync(targetFile);
+          res.json({
+            success: true,
+            data,
+            deviceId,
+            lastModified: stats.mtimeMs,
+          });
+          return;
+        }
+      }
+    }
+
     res.json({ success: true, data: null, lastModified: 0 });
   } catch (err: any) {
     console.warn('Error reading database file:', err);
@@ -102,20 +105,77 @@ app.post('/api/database/specimens', (req: Request, res: Response): void => {
       res.status(400).json({ success: false, error: 'Formato inválido' });
       return;
     }
-    const targetFile = getTargetDbFile(deviceId);
-    fs.writeFileSync(targetFile, JSON.stringify(specimens, null, 2), 'utf-8');
     const updatedTime = Number(lastModified) || Date.now();
+    serverDbLastModified = updatedTime;
+
+    // CRITICAL: Always write to central shared DB_FILE so all devices stay updated
+    fs.writeFileSync(DB_FILE, JSON.stringify(specimens, null, 2), 'utf-8');
+
+    // Also write device backup if specified
+    if (deviceId) {
+      const targetFile = getTargetDbFile(deviceId);
+      try {
+        fs.writeFileSync(targetFile, JSON.stringify(specimens, null, 2), 'utf-8');
+      } catch {}
+    }
+
     res.json({
       success: true,
       count: specimens.length,
       deviceId: deviceId || 'global',
       lastModified: updatedTime,
-      message: deviceId
-        ? `Base de datos guardada de forma aislada para el dispositivo ${deviceId}`
-        : 'Base de datos guardada en servidor',
+      message: 'Base de datos sincronizada exitosamente en el servidor para todos los dispositivos',
     });
   } catch (err: any) {
     console.error('Error writing database file:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint to export central JSON file directly
+app.get('/api/database/export-json', (_req: Request, res: Response): void => {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="BioBitacora_CR_Respaldo_${new Date().toISOString().slice(0, 10)}.json"`
+      );
+      res.setHeader('Content-Type', 'application/json');
+      res.sendFile(DB_FILE);
+      return;
+    }
+    res.status(404).json({ success: false, error: 'No existe archivo central de base de datos' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint to import and broadcast a JSON database file
+app.post('/api/database/import-json', (req: Request, res: Response): void => {
+  try {
+    const payload = req.body;
+    let recordsToImport: any[] | null = null;
+    if (Array.isArray(payload)) {
+      recordsToImport = payload;
+    } else if (payload && Array.isArray(payload.specimens)) {
+      recordsToImport = payload.specimens;
+    }
+
+    if (!recordsToImport || recordsToImport.length === 0) {
+      res.status(400).json({ success: false, error: 'El archivo JSON no contiene una lista válida de especímenes' });
+      return;
+    }
+
+    fs.writeFileSync(DB_FILE, JSON.stringify(recordsToImport, null, 2), 'utf-8');
+    serverDbLastModified = Date.now();
+
+    res.json({
+      success: true,
+      count: recordsToImport.length,
+      lastModified: serverDbLastModified,
+      message: `¡Archivo JSON importado y sincronizado! ${recordsToImport.length} registros actualizados en todos los dispositivos.`,
+    });
+  } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });

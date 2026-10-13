@@ -1,5 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { SpecimenRecord, TaxonGroup } from '../types/specimen';
+import { TaxonDonutChart, TaxonDonutItem } from './charts/TaxonDonutChart';
+import { TopographicElevationHistogram } from './charts/TopographicElevationHistogram';
+import { ExecutiveSinacReportModal } from './ExecutiveSinacReportModal';
+import { ThemeSwitcher } from './ThemeSwitcher';
+import { useTheme } from '../utils/themeContext';
 
 interface StatisticsViewProps {
   specimens: SpecimenRecord[];
@@ -16,9 +21,11 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
   onOpenNewSpecimen,
   onGoHome,
 }) => {
+  const { isDarkMode } = useTheme();
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string>('ALL');
   const [searchTableQuery, setSearchTableQuery] = useState('');
   const [sortBy, setSortBy] = useState<'individuals' | 'sightings' | 'name'>('individuals');
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   // Aggregated calculations
   const stats = useMemo(() => {
@@ -106,57 +113,73 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
     };
   }, [specimens]);
 
-  // Taxon group definitions with color schemes & icons
+  // Taxon group definitions with color schemes & high contrast text (WCAG compliant)
   const taxonGroupsMeta = [
     {
       key: 'Mammalia',
       label: 'Mamíferos',
       icon: 'pets',
-      color: '#f59e0b',
-      bgLight: '#fef3c7',
-      border: '#fde68a',
+      color: '#d97706',
+      bgLight: isDarkMode ? '#451a03' : '#fef3c7',
+      border: isDarkMode ? '#92400e' : '#f59e0b',
+      textContrast: isDarkMode ? '#fde68a' : '#78350f',
     },
     {
       key: 'Amphibia',
       label: 'Anfibios',
       icon: 'flutter_dash',
       color: '#10b981',
-      bgLight: '#d1fae5',
-      border: '#a7f3d0',
+      bgLight: isDarkMode ? '#064e3b' : '#d1fae5',
+      border: isDarkMode ? '#059669' : '#a7f3d0',
+      textContrast: isDarkMode ? '#a7f3d0' : '#064e3b',
     },
     {
       key: 'Reptilia',
       label: 'Reptiles',
       icon: 'pest_control',
       color: '#e11d48',
-      bgLight: '#ffe4e6',
-      border: '#fecdd3',
+      bgLight: isDarkMode ? '#4c0519' : '#ffe4e6',
+      border: isDarkMode ? '#be123c' : '#fecdd3',
+      textContrast: isDarkMode ? '#fecdd3' : '#881337',
     },
     {
       key: 'Aves',
       label: 'Aves',
       icon: 'cruelty_free',
       color: '#0284c7',
-      bgLight: '#e0f2fe',
-      border: '#bae6fd',
+      bgLight: isDarkMode ? '#082f49' : '#e0f2fe',
+      border: isDarkMode ? '#0369a1' : '#bae6fd',
+      textContrast: isDarkMode ? '#bae6fd' : '#075985',
     },
     {
       key: 'Plantae',
       label: 'Plantas / Flora',
       icon: 'local_florist',
       color: '#16a34a',
-      bgLight: '#dcfce7',
-      border: '#bbf7d0',
+      bgLight: isDarkMode ? '#052e16' : '#dcfce7',
+      border: isDarkMode ? '#15803d' : '#bbf7d0',
+      textContrast: isDarkMode ? '#bbf7d0' : '#14532d',
     },
     {
       key: 'Insecta',
       label: 'Insectos / Artrópodos',
       icon: 'bug_report',
       color: '#8b5cf6',
-      bgLight: '#ede9fe',
-      border: '#ddd6fe',
+      bgLight: isDarkMode ? '#2e1065' : '#ede9fe',
+      border: isDarkMode ? '#7c3aed' : '#ddd6fe',
+      textContrast: isDarkMode ? '#ddd6fe' : '#5b21b6',
     },
   ];
+
+  const donutData: TaxonDonutItem[] = taxonGroupsMeta.map((g) => ({
+    key: g.key,
+    label: g.label,
+    speciesCount: stats.groupCounts[g.key]?.speciesCount || 0,
+    individualsCount: stats.groupCounts[g.key]?.individualsCount || 0,
+    sightingsCount: stats.groupCounts[g.key]?.sightingsCount || 0,
+    color: g.color,
+    icon: g.icon,
+  }));
 
   // Filtered specimen list for numerical table
   const tableData = useMemo(() => {
@@ -193,7 +216,7 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
     const dateStr = new Date().toLocaleDateString('es-CR', { year: 'numeric', month: 'long', day: 'numeric' });
     let text = `=====================================================================\n`;
     text += `BIOBITÁCORA COSTA RICA - INFORME ESTADÍSTICO DE BIODIVERSIDAD\n`;
-    text += `Plataforma diseñada y elaborada por: Ing. Jorge Carvajal V.\n`;
+    text += `Plataforma diseñada y elaborada por: Ing. Carvajal V.\n`;
     text += `Fecha de emisión: ${dateStr}\n`;
     text += `=====================================================================\n\n`;
     text += `RESUMEN GENERAL CUANTITATIVO:\n`;
@@ -223,14 +246,14 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
     });
 
     text += `=====================================================================\n`;
-    text += `Certificado por: Ing. Jorge Carvajal V. - BioBitácora CR\n`;
+    text += `Certificado por: Ing. Carvajal V. - BioBitácora CR\n`;
     text += `=====================================================================\n`;
 
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Reporte_Estadistico_Biodiversidad_Ing_Jorge_Carvajal_${new Date().toISOString().slice(0, 10)}.txt`;
+    a.download = `Reporte_Estadistico_Biodiversidad_Ing_Carvajal_${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -258,19 +281,20 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-[#414844]">
-                Elaborado por: <strong className="text-[#006c49] font-bold">Ing. Jorge Carvajal V.</strong>
+                Elaborado por: <strong className="text-[#006c49] font-bold">Ing. Carvajal V.</strong>
               </p>
             </div>
           </button>
 
           <div className="flex items-center gap-2">
+            <ThemeSwitcher />
             <button
-              onClick={handleExportTextReport}
+              onClick={() => setIsReportModalOpen(true)}
               className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#f2f4ee] text-[#002217] border border-[#c1c8c3] text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-              title="Descargar informe completo en texto"
+              title="Descargar informe oficial SINAC / Ficha ejecutiva en PDF o CSV Darwin Core"
             >
-              <span className="material-symbols-outlined text-[16px] text-[#006c49]">download</span>
-              <span className="hidden sm:inline">Descargar Informe</span>
+              <span className="material-symbols-outlined text-[16px] text-[#006c49]">picture_as_pdf</span>
+              <span className="hidden sm:inline">Descargar Informe SINAC / DwC</span>
             </button>
             <button
               onClick={onOpenCatalog}
@@ -309,7 +333,7 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
             </span>
             <span className="text-sm font-bold text-white flex items-center gap-1">
               <span className="material-symbols-outlined text-[#6cf8bb] text-[18px]">verified</span>
-              Ing. Jorge Carvajal V.
+              Ing. Carvajal V.
             </span>
             <span className="text-[10px] text-[#717974] mt-0.5">
               Sistema BioBitácora Costa Rica
@@ -490,50 +514,122 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
           </div>
         </section>
 
-        {/* Section: Gráficas de Biodiversidad (Bar Charts + Holdridge + IUCN) */}
+        {/* Section: Gráficas de Biodiversidad (Donut Chart + Histograma Topográfico + IUCN + Holdridge) */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Gráfica 1: Proporción por Taxón */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#c1c8c3]/70 shadow-sm flex flex-col gap-4">
+          {/* Gráfica 1: Proporción por Taxón (Donut Chart Interactivo) */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#c1c8c3]/70 shadow-sm flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <h4 className="font-bold text-sm text-[#002217] flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#006c49]">bar_chart</span>
-                Gráfica: Proporción por Taxón
+                <span className="material-symbols-outlined text-[#006c49]">donut_large</span>
+                Gráfica: Proporción por Taxón (Donut Chart)
               </h4>
               <span className="text-[11px] text-[#717974] font-mono">{stats.totalSpecies} especies</span>
             </div>
 
-            <div className="flex flex-col gap-2.5 pt-1">
-              {taxonGroupsMeta.map((group) => {
-                const data = stats.groupCounts[group.key] || { speciesCount: 0, individualsCount: 0 };
-                const pct = stats.totalSpecies > 0 ? (data.speciesCount / stats.totalSpecies) * 100 : 0;
+            <TaxonDonutChart
+              data={donutData}
+              totalSpecies={stats.totalSpecies}
+              totalIndividuals={stats.totalIndividuals}
+              selectedGroup={selectedGroupFilter}
+              onSelectGroup={(key) => setSelectedGroupFilter(key)}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+
+          {/* Gráfica 2: Pisos Altitudinales (Histograma de Perfil Topográfico de Costa Rica) */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#c1c8c3]/70 shadow-sm flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-sm text-[#002217] flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#0284c7]">altitude</span>
+                Gráfica: Pisos Altitudinales (Perfil Topográfico)
+              </h4>
+              <span className="text-[11px] text-[#717974] font-mono">0 a &gt;2,500 msnm</span>
+            </div>
+
+            <TopographicElevationHistogram
+              bins={stats.elevationBins}
+              totalSpecimens={stats.totalSpecies}
+              isDarkMode={isDarkMode}
+            />
+          </div>
+
+          {/* Gráfica 3: Estado de Conservación UICN (Escala Estándar Completa: LC → NT → VU → EN → CR → EW → EX) */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#c1c8c3]/70 shadow-sm flex flex-col gap-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h4 className="font-bold text-sm text-[#002217] flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#e11d48]">shield</span>
+                Escala UICN Completa: Listas Rojas de Conservación
+              </h4>
+              <span className="text-[10px] font-mono font-bold text-[#991b1b] bg-[#fee2e2] px-2 py-0.5 rounded border border-[#fca5a5]">
+                CR Incluido (Anfibios Los Santos)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              {[
+                { code: 'LC', label: 'Preocupación Menor', color: '#10b981', bg: isDarkMode ? '#064e3b' : '#d1fae5', textContrast: isDarkMode ? '#a7f3d0' : '#064e3b' },
+                { code: 'NT', label: 'Casi Amenazado', color: '#d97706', bg: isDarkMode ? '#451a03' : '#fef3c7', textContrast: isDarkMode ? '#fde68a' : '#78350f' },
+                { code: 'VU', label: 'Vulnerable', color: '#ea580c', bg: isDarkMode ? '#431407' : '#ffedd5', textContrast: isDarkMode ? '#fed7aa' : '#7c2d12' },
+                { code: 'EN', label: 'En Peligro', color: '#dc2626', bg: isDarkMode ? '#450a0a' : '#fee2e2', textContrast: isDarkMode ? '#fecaca' : '#7f1d1d' },
+                { code: 'CR', label: 'En Peligro Crítico', color: '#991b1b', bg: isDarkMode ? '#7f1d1d' : '#fecaca', textContrast: '#ffffff', isCritical: true },
+                { code: 'EW', label: 'Extinto Silvestre', color: '#7c3aed', bg: isDarkMode ? '#2e1065' : '#ede9fe', textContrast: isDarkMode ? '#ddd6fe' : '#4c1d95' },
+                { code: 'EX', label: 'Extinto', color: '#18181b', bg: isDarkMode ? '#27272a' : '#f4f4f5', textContrast: isDarkMode ? '#f4f4f5' : '#09090b' },
+                { code: 'DD', label: 'Datos Insuficientes', color: '#64748b', bg: isDarkMode ? '#1e293b' : '#f1f5f9', textContrast: isDarkMode ? '#cbd5e1' : '#1e293b' },
+              ].map((item) => {
+                const count = stats.iucnCounts[item.code] || 0;
+                const pct = stats.totalSpecies > 0 ? ((count / stats.totalSpecies) * 100).toFixed(0) : '0';
 
                 return (
-                  <div key={group.key} className="flex flex-col gap-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-[#191c19] flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: group.color }} />
-                        {group.label}
-                      </span>
-                      <span className="font-mono text-[#414844] font-bold">
-                        {data.speciesCount} ({pct.toFixed(1)}%) • {data.individualsCount} inds.
-                      </span>
-                    </div>
-                    <div className="w-full bg-[#f0f2ec] rounded-full h-3 overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-700"
-                        style={{
-                          width: `${Math.max(pct, data.speciesCount > 0 ? 5 : 0)}%`,
-                          backgroundColor: group.color,
-                        }}
-                      />
-                    </div>
+                  <div
+                    key={item.code}
+                    className={`p-2.5 rounded-xl flex flex-col items-center justify-center text-center gap-0.5 border transition-all ${
+                      item.isCritical
+                        ? 'ring-2 ring-[#991b1b] shadow-sm bg-[#991b1b] text-white'
+                        : ''
+                    }`}
+                    style={
+                      item.isCritical
+                        ? { backgroundColor: item.bg, borderColor: item.color }
+                        : { backgroundColor: item.bg, borderColor: item.color }
+                    }
+                  >
+                    <span
+                      className="text-xs font-mono font-black"
+                      style={{ color: item.isCritical ? '#ffffff' : item.textContrast }}
+                    >
+                      {item.code}
+                    </span>
+                    <strong className={`text-xl font-black ${item.isCritical ? 'text-white' : 'text-[#002217]'}`}>
+                      {count}
+                    </strong>
+                    <span
+                      className="text-[10px] leading-tight font-bold"
+                      style={{ color: item.isCritical ? '#fecaca' : item.textContrast }}
+                    >
+                      {item.label}
+                    </span>
+                    <span
+                      className="text-[9px] font-mono"
+                      style={{ color: item.isCritical ? '#fca5a5' : '#717974' }}
+                    >
+                      {pct}% del total
+                    </span>
                   </div>
                 );
               })}
             </div>
+
+            <div className={`p-2.5 rounded-xl border text-[11px] flex items-center gap-2 ${
+              isDarkMode ? 'bg-[#103529] border-[#1e4d3d] text-[#c1ecd7]' : 'bg-[#f8faf4] border-[#d1ded6] text-[#414844]'
+            }`}>
+              <span className="material-symbols-outlined text-[#991b1b] text-[18px]">emergency</span>
+              <span>
+                <strong>Importancia Biológica:</strong> La categoría <strong>CR (En Peligro Crítico)</strong> y <strong>VU (Vulnerable)</strong> son los indicadores clave de conservación en anfibios microendémicos como <em>Isthmohyla nacientes</em> en las nacientes de la Zona de los Santos.
+              </span>
+            </div>
           </div>
 
-          {/* Gráfica 2: Distribución por Zonas de Vida Holdridge */}
+          {/* Gráfica 4: Distribución por Zonas de Vida Holdridge */}
           <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#c1c8c3]/70 shadow-sm flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h4 className="font-bold text-sm text-[#002217] flex items-center gap-2">
@@ -547,7 +643,7 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
 
             <div className="flex flex-col gap-2.5 pt-1">
               {Object.entries(stats.lifeZoneCounts).map(([zone, count], idx) => {
-                const colors = ['#006c49', '#0284c7', '#8b5cf6', '#f59e0b', '#10b981', '#e11d48'];
+                const colors = ['#006c49', '#0284c7', '#8b5cf6', '#d97706', '#10b981', '#e11d48'];
                 const color = colors[idx % colors.length];
                 const pct = stats.totalSpecies > 0 ? (count / stats.totalSpecies) * 100 : 0;
 
@@ -568,80 +664,6 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
                           width: `${Math.max(pct, 6)}%`,
                           backgroundColor: color,
                         }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Gráfica 3: Estado de Conservación UICN */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#c1c8c3]/70 shadow-sm flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-bold text-sm text-[#002217] flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#e11d48]">shield</span>
-                Gráfica: Estado UICN de Conservación
-              </h4>
-              <span className="text-[11px] text-[#717974] font-mono">Listas Rojas CR</span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-              {[
-                { code: 'LC', label: 'Preocupación Menor', color: '#10b981', bg: '#d1fae5' },
-                { code: 'NT', label: 'Casi Amenazado', color: '#f59e0b', bg: '#fef3c7' },
-                { code: 'VU', label: 'Vulnerable', color: '#ea580c', bg: '#ffedd5' },
-                { code: 'EN', label: 'En Peligro', color: '#dc2626', bg: '#fee2e2' },
-              ].map((item) => {
-                const count = stats.iucnCounts[item.code] || 0;
-                const pct = stats.totalSpecies > 0 ? ((count / stats.totalSpecies) * 100).toFixed(0) : '0';
-
-                return (
-                  <div
-                    key={item.code}
-                    className="p-3 rounded-xl flex flex-col items-center justify-center text-center gap-1 border"
-                    style={{ backgroundColor: item.bg, borderColor: item.color }}
-                  >
-                    <span className="text-xs font-mono font-black" style={{ color: item.color }}>
-                      {item.code}
-                    </span>
-                    <strong className="text-xl font-black text-[#002217]">{count}</strong>
-                    <span className="text-[10px] text-[#414844] leading-tight font-medium">
-                      {item.label}
-                    </span>
-                    <span className="text-[9px] font-mono text-[#717974]">{pct}% del total</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Gráfica 4: Distribución Altitudinal de los Muestreos */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-white border border-[#c1c8c3]/70 shadow-sm flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-bold text-sm text-[#002217] flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#0284c7]">altitude</span>
-                Gráfica: Pisos Altitudinales (msnm)
-              </h4>
-              <span className="text-[11px] text-[#717974] font-mono">Gradiente Costa Rica</span>
-            </div>
-
-            <div className="flex flex-col gap-2.5 pt-1">
-              {Object.entries(stats.elevationBins).map(([bin, count]) => {
-                const pct = stats.totalSpecies > 0 ? (count / stats.totalSpecies) * 100 : 0;
-
-                return (
-                  <div key={bin} className="flex flex-col gap-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-[#191c19]">{bin}</span>
-                      <span className="font-mono text-[#414844] font-bold">
-                        {count} especímenes ({pct.toFixed(0)}%)
-                      </span>
-                    </div>
-                    <div className="w-full bg-[#f0f2ec] rounded-full h-3 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-[#0284c7] transition-all duration-700"
-                        style={{ width: `${Math.max(pct, count > 0 ? 5 : 0)}%` }}
                       />
                     </div>
                   </div>
@@ -792,10 +814,17 @@ export const StatisticsView: React.FC<StatisticsViewProps> = ({
             </span>
           </div>
           <span className="font-semibold text-[#002217]">
-            Autor: Ing. Jorge Carvajal V.
+            Autor: Ing. Carvajal V.
           </span>
         </div>
       </main>
+
+      {/* Modal Ficha Ejecutiva SINAC / Informe PDF & Darwin Core CSV */}
+      <ExecutiveSinacReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        specimens={specimens}
+      />
     </div>
   );
 };

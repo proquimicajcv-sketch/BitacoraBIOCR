@@ -16,11 +16,15 @@ import {
 } from '../utils/audioBioacoustics';
 import { AudioRecordingModal } from './AudioRecordingModal';
 import { CostaRicaMap } from './CostaRicaMap';
+import { CachedImage } from './CachedImage';
+import { ThemeSwitcher } from './ThemeSwitcher';
 import {
   formatCoordinatesDMS,
   findNearestHotspot,
   estimateHoldridgeZone,
 } from '../data/costaRicaData';
+import { formatProtectedCoordinates } from '../utils/geoprivacy';
+import { fetchLiveFieldWeather } from '../utils/weatherMoonService';
 
 // Helper utilities for sighting date and time handling
 function parseDateToYmd(dateStr?: string, timestampStr?: string): string {
@@ -146,12 +150,26 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   const [isZoomed, setIsZoomed] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioPlaybackController, setAudioPlaybackController] = useState<SoundPlaybackController | null>(null);
-  const [activePhotoModal, setActivePhotoModal] = useState<{ url: string; label: string; desc: string } | null>(null);
-  const [editingPhoto, setEditingPhoto] = useState<{ id: string; label: string; url: string; description: string } | null>(null);
+  const [activePhotoModal, setActivePhotoModal] = useState<{
+    id?: string;
+    url: string;
+    label: string;
+    desc: string;
+    sightingId?: string;
+  } | null>(null);
+  const [editingPhoto, setEditingPhoto] = useState<{
+    id: string;
+    sightingId?: string;
+    label: string;
+    url: string;
+    description: string;
+  } | null>(null);
   const [editPhotoUrl, setEditPhotoUrl] = useState('');
   const [editPhotoDesc, setEditPhotoDesc] = useState('');
   const [isAudioModalOpen, setIsAudioModalOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isGeoprivacyActive, setIsGeoprivacyActive] = useState(false);
+  const [isLoadingSightingWeather, setIsLoadingSightingWeather] = useState(false);
 
   // Direct Sighting Modal State
   const [isAddSightingModalOpen, setIsAddSightingModalOpen] = useState(false);
@@ -159,7 +177,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
   const [isChangePhotoModalOpen, setIsChangePhotoModalOpen] = useState(false);
   const [newPhotoUrl, setNewPhotoUrl] = useState(specimen.heroImage);
   const [newPhotoDescription, setNewPhotoDescription] = useState(specimen.heroImageDescription);
-  const [sightingObserver, setSightingObserver] = useState(currentObserverName || 'Ing. Jorge Carvajal V.');
+  const [sightingObserver, setSightingObserver] = useState(currentObserverName || 'Ing. Carvajal V.');
   const [sightingLocality, setSightingLocality] = useState(specimen.georeference.locality || '');
   const [sightingDate, setSightingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [sightingTime, setSightingTime] = useState(() => {
@@ -251,7 +269,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
   const handleOpenAddSighting = () => {
     const d = new Date();
-    setSightingObserver(currentObserverName || 'Ing. Jorge Carvajal V.');
+    setSightingObserver(currentObserverName || 'Ing. Carvajal V.');
     setSightingLocality(specimen.georeference.locality || '');
     setSightingDate(d.toISOString().slice(0, 10));
     setSightingTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
@@ -288,7 +306,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
   const handleOpenEditSighting = (sight: SightingEntry) => {
     setEditingSightingId(sight.id);
-    setSightingObserver(sight.observer || currentObserverName || 'Ing. Jorge Carvajal V.');
+    setSightingObserver(sight.observer || currentObserverName || 'Ing. Carvajal V.');
     setSightingLocality(sight.locality || specimen.georeference.locality || '');
 
     const parsedDate = parseDateToYmd(sight.date, sight.timestamp);
@@ -347,7 +365,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
       id: editingSightingId || 'sight-' + Date.now(),
       timestamp: formattedTimestamp,
       date: recordDate,
-      observer: sightingObserver.trim() || currentObserverName || 'Ing. Jorge Carvajal V.',
+      observer: sightingObserver.trim() || currentObserverName || 'Ing. Carvajal V.',
       locality: sightingLocality.trim() || specimen.georeference.locality,
       coordinates: sightingCoordsDms,
       count: Number(sightingCount) || 1,
@@ -473,6 +491,69 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const handleSaveCuriousFindingPhoto = (sightingId: string, newPhotoUrl: string, newDesc?: string) => {
+    if (!newPhotoUrl) return;
+
+    // 1. Update ONLY this sighting's curiousFindingPhoto
+    const updatedSightings = (specimen.sightings || []).map((s) => {
+      if (s.id === sightingId) {
+        return {
+          ...s,
+          curiousFindingPhoto: newPhotoUrl,
+          photoUrls: [newPhotoUrl],
+          curiousFindingDescription: newDesc || s.curiousFindingDescription,
+        };
+      }
+      return s;
+    });
+
+    // 2. Update photo-4 ("Hallazgo: Macho Tuerto") in additionalPhotos WITHOUT EVER touching photo-3 ("Detalle Ocular")
+    let updatedPhotos = [...(specimen.additionalPhotos || [])];
+    const p4Idx = updatedPhotos.findIndex(
+      (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
+    );
+    if (p4Idx >= 0) {
+      updatedPhotos[p4Idx] = {
+        ...updatedPhotos[p4Idx],
+        url: newPhotoUrl,
+        description: newDesc || updatedPhotos[p4Idx].description,
+      };
+    } else {
+      updatedPhotos.push({
+        id: 'photo-4',
+        url: newPhotoUrl,
+        label: 'Hallazgo: Macho Tuerto',
+        description: newDesc || 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural).',
+      });
+    }
+
+    // 3. ABSOLUTELY PROTECT photo-3 "Detalle Ocular" so it NEVER gets changed or overwritten
+    updatedPhotos = updatedPhotos.map((p) => {
+      if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
+        return {
+          ...p,
+          url: '/isthmohyla_nacientes_eye_zoom.jpg',
+          label: 'Detalle Ocular',
+          description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
+        };
+      }
+      return p;
+    });
+
+    const updatedSpecimen: SpecimenRecord = {
+      ...specimen,
+      sightings: updatedSightings,
+      additionalPhotos: updatedPhotos,
+    };
+
+    if (onSaveSpecimen) {
+      onSaveSpecimen(updatedSpecimen);
+    }
+    setEditingPhoto(null);
+    setSaveSuccessMsg('¡Fotografía del macho tuerto sustituida exitosamente en esta escena!');
+    setTimeout(() => setSaveSuccessMsg(null), 3500);
+  };
+
   return (
     <div className="flex flex-col w-full min-h-screen bg-[#f8faf4] pb-20">
       {/* Top Fixed Header */}
@@ -507,10 +588,13 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Selector de Tema / Modo Nocturno */}
+            <ThemeSwitcher compact />
+
             {/* Botón explícito para regresar a Inicio */}
             <button
               onClick={onGoHome || onBack}
-              className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-[#f2f4ee] border border-[#c1c8c3] text-xs text-[#002217] font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer"
+              className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#002217] hover:bg-[#f2f4ee] border border-[#c1c8c3] text-xs text-[#002217] dark:text-[#6cf8bb] font-bold flex items-center gap-1 shadow-sm transition-all cursor-pointer"
               title="Regresar a Inicio"
             >
               <span className="material-symbols-outlined text-[16px] text-[#006c49]">home</span>
@@ -825,11 +909,38 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 <span className="material-symbols-outlined text-[#006c49] text-[20px]">explore</span>
                 Georreferenciación y Hábitat
               </h3>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#6cf8bb]/30 text-[#006c49] font-mono text-[11px] font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#006c49]" />
-                Precisión ±{specimen.georeference.accuracyMeters}m
-              </span>
+              <div className="flex items-center gap-2">
+                <label
+                  className="flex items-center gap-1.5 cursor-pointer bg-[#f2f4ee] px-2 py-1 rounded-lg border border-[#c1c8c3] text-[11px] font-semibold text-[#002217]"
+                  title="Oscurecer coordenadas (difuminar a radio de 2 a 5 km en modo público) para proteger naciente de especies amenazadas o microendémicas"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isGeoprivacyActive}
+                    onChange={(e) => setIsGeoprivacyActive(e.target.checked)}
+                    className="accent-[#006c49] w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className="flex items-center gap-0.5">
+                    <span className="material-symbols-outlined text-[14px] text-[#006c49]">shield</span>
+                    <span>Oscurecer Coordenadas</span>
+                  </span>
+                </label>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#6cf8bb]/30 text-[#006c49] font-mono text-[11px] font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#006c49]" />
+                  Precisión ±{isGeoprivacyActive ? '3,200' : specimen.georeference.accuracyMeters}m
+                </span>
+              </div>
             </div>
+
+            {/* Geoprivacy Alert Banner */}
+            {isGeoprivacyActive && (
+              <div className="p-2.5 rounded-xl bg-[#e6f4ea] border border-[#a8dab5] text-[#003824] text-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#006c49] text-[18px]">security</span>
+                <span>
+                  <strong>Geoprivacidad de Naciente Activa:</strong> Coordenadas difuminadas a radio de ~3.2 km para evitar la extracción ilegal y proteger la naciente de <em>{specimen.scientificName}</em> en modo público.
+                </span>
+              </div>
+            )}
 
             <div
               onClick={() => onOpenMap(specimen)}
@@ -850,7 +961,15 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="material-symbols-outlined text-red-600 text-[18px]">location_on</span>
                   <span className="font-mono text-[11px] text-[#191c19] truncate font-bold">
-                    {specimen.georeference.latitudeDMS}, {specimen.georeference.longitudeDMS}
+                    {(() => {
+                      const prot = formatProtectedCoordinates(
+                        specimen.georeference.latitude,
+                        specimen.georeference.longitude,
+                        specimen.id,
+                        isGeoprivacyActive
+                      );
+                      return prot.displayCoordinates;
+                    })()}
                   </span>
                 </div>
                 <span className="font-mono text-[11px] text-[#006c49] font-bold flex-shrink-0">
@@ -1036,6 +1155,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                     <div
                       onClick={() =>
                         setActivePhotoModal({
+                          id: photo.id,
                           url: photo.url,
                           label: photo.label,
                           desc: photo.description,
@@ -1130,9 +1250,11 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                         <div
                           onClick={() =>
                             setActivePhotoModal({
+                              id: `curious-${c.id}`,
                               url: c.curiousFindingPhoto || '/hallazgo_macho_un_ojo.jpg',
-                              label: c.curiousFindingTitle || 'Hallazgo Curioso',
-                              desc: c.curiousFindingDescription || c.behaviorObserved,
+                              label: c.curiousFindingTitle || 'Macho cantor al que le falta un ojo (Anoftalmia)',
+                              desc: c.curiousFindingDescription || c.behaviorObserved || '',
+                              sightingId: c.id,
                             })
                           }
                           className="relative w-full md:w-36 h-36 rounded-xl overflow-hidden bg-[#241a0e] flex-shrink-0 cursor-pointer group border border-[#fde68a]"
@@ -1143,6 +1265,29 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                           <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
+
+                          {/* Botón directo para sustituir SOLO esta foto en esta escena */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const currentUrl = c.curiousFindingPhoto || '/hallazgo_macho_un_ojo.jpg';
+                              setEditingPhoto({
+                                id: `sighting-curious-${c.id}`,
+                                sightingId: c.id,
+                                label: c.curiousFindingTitle || 'Macho cantor al que le falta un ojo (Anoftalmia)',
+                                url: currentUrl,
+                                description: c.curiousFindingDescription || c.behaviorObserved || '',
+                              });
+                              setEditPhotoUrl(currentUrl);
+                              setEditPhotoDesc(c.curiousFindingDescription || c.behaviorObserved || '');
+                            }}
+                            className="absolute top-1.5 left-1.5 w-7 h-7 rounded-lg bg-[#002217] hover:bg-[#006c49] text-[#6cf8bb] flex items-center justify-center transition-all cursor-pointer z-20 border border-[#6cf8bb]/60 shadow-md active:scale-95"
+                            title="Cambiar fotografía del macho tuerto en esta escena"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">edit</span>
+                          </button>
+
                           <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center">
                             <span className="material-symbols-outlined text-[14px]">zoom_in</span>
                           </div>
@@ -1172,6 +1317,50 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                         <p className="text-xs text-[#451a03] leading-relaxed">
                           {c.curiousFindingDescription || c.behaviorObserved}
                         </p>
+
+                        {/* Botones directos para aplicar/subir foto de Macho Tuerto en esta escena */}
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5 pt-1.5 border-t border-[#fde68a]">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSaveCuriousFindingPhoto(c.id, '/hallazgo_macho_un_ojo.jpg');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-[#b45309] hover:bg-[#78350f] text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                            title="Asignar la fotografía del macho tuerto (/hallazgo_macho_un_ojo.jpg) a esta escena"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">verified</span>
+                            <span>Asignar Foto Macho Tuerto</span>
+                          </button>
+
+                          <label
+                            htmlFor={`file-input-curious-direct-${c.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="px-2.5 py-1 rounded-lg bg-[#002217] hover:bg-[#003d2b] text-[#6cf8bb] text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer border border-[#6cf8bb]/40"
+                            title="Subir imagen propia desde este dispositivo para este hallazgo"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">upload_file</span>
+                            <span>Subir Foto Propia</span>
+                          </label>
+                          <input
+                            type="file"
+                            id={`file-input-curious-direct-${c.id}`}
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = (ev) => {
+                                  if (typeof ev.target?.result === 'string') {
+                                    handleSaveCuriousFindingPhoto(c.id, ev.target.result);
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </div>
 
                         <div className="mt-1 pt-1.5 border-t border-[#fef3c7] flex flex-wrap items-center gap-2 text-[11px] text-[#92400e]">
                           {c.microhabitat && (
@@ -2117,25 +2306,74 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 type="button"
                 onClick={() => {
                   if (editPhotoUrl) {
-                    const updatedPhotos = (specimen.additionalPhotos || []).map((p) => {
-                      if (p.id === editingPhoto.id) {
-                        return {
-                          ...p,
+                    let updatedSightings = specimen.sightings || [];
+                    let updatedPhotos = [...(specimen.additionalPhotos || [])];
+
+                    if (editingPhoto.sightingId) {
+                      // 1. UPDATE ONLY THIS SIGHTING'S PHOTO IN THIS EXACT SCENE
+                      updatedSightings = updatedSightings.map((s) => {
+                        if (s.id === editingPhoto.sightingId) {
+                          return {
+                            ...s,
+                            curiousFindingPhoto: editPhotoUrl,
+                            photoUrls: [editPhotoUrl],
+                            curiousFindingDescription: editPhotoDesc || s.curiousFindingDescription,
+                          };
+                        }
+                        return s;
+                      });
+
+                      // 2. Also update photo-4 ("Hallazgo: Macho Tuerto") if present
+                      const p4Idx = updatedPhotos.findIndex(
+                        (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
+                      );
+                      if (p4Idx >= 0) {
+                        updatedPhotos[p4Idx] = {
+                          ...updatedPhotos[p4Idx],
                           url: editPhotoUrl,
-                          description: editPhotoDesc || p.description,
+                          description: editPhotoDesc || updatedPhotos[p4Idx].description,
                         };
                       }
-                      return p;
-                    });
+                    } else {
+                      // Regular additionalPhotos gallery update
+                      updatedPhotos = updatedPhotos.map((p) => {
+                        if (p.id === editingPhoto.id) {
+                          return {
+                            ...p,
+                            url: editPhotoUrl,
+                            description: editPhotoDesc || p.description,
+                          };
+                        }
+                        return p;
+                      });
+                    }
+
+                    // CRITICAL: Ensure photo-3 "Detalle Ocular" NEVER gets changed to macho tuerto!
+                    const p3Idx = updatedPhotos.findIndex(
+                      (p) => p.id === 'photo-3' || p.label === 'Detalle Ocular'
+                    );
+                    if (p3Idx >= 0 && updatedPhotos[p3Idx].url.includes('macho_un_ojo')) {
+                      updatedPhotos[p3Idx] = {
+                        ...updatedPhotos[p3Idx],
+                        url: '/isthmohyla_nacientes_eye_zoom.jpg',
+                        description:
+                          'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes.',
+                      };
+                    }
+
                     const updatedSpecimen: SpecimenRecord = {
                       ...specimen,
+                      sightings: updatedSightings,
                       additionalPhotos: updatedPhotos,
                     };
+
                     if (onSaveSpecimen) {
                       onSaveSpecimen(updatedSpecimen);
                     }
                     setEditingPhoto(null);
-                    setSaveSuccessMsg(`¡Fotografía "${editingPhoto.label}" sustituida y guardada permanentemente!`);
+                    setSaveSuccessMsg(
+                      `¡Fotografía "${editingPhoto.label}" sustituida y guardada permanentemente en esta escena!`
+                    );
                     setTimeout(() => setSaveSuccessMsg(null), 3500);
                   }
                 }}
@@ -2179,12 +2417,30 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 </span>
                 <button
                   onClick={() => {
-                    const target = specimen.additionalPhotos?.find((p) => p.label === activePhotoModal.label) || {
-                      id: 'photo-3',
-                      label: activePhotoModal.label,
-                      url: activePhotoModal.url,
-                      description: activePhotoModal.desc,
-                    };
+                    if (activePhotoModal.sightingId) {
+                      const sightingId = activePhotoModal.sightingId;
+                      setActivePhotoModal(null);
+                      setEditingPhoto({
+                        id: `sighting-curious-${sightingId}`,
+                        sightingId: sightingId,
+                        label: activePhotoModal.label,
+                        url: activePhotoModal.url,
+                        description: activePhotoModal.desc,
+                      });
+                      setEditPhotoUrl(activePhotoModal.url);
+                      setEditPhotoDesc(activePhotoModal.desc);
+                      return;
+                    }
+
+                    const target =
+                      (activePhotoModal.id ? specimen.additionalPhotos?.find((p) => p.id === activePhotoModal.id) : null) ||
+                      specimen.additionalPhotos?.find((p) => p.label === activePhotoModal.label) ||
+                      specimen.additionalPhotos?.find((p) => p.url === activePhotoModal.url) || {
+                        id: activePhotoModal.id || 'photo-1',
+                        label: activePhotoModal.label,
+                        url: activePhotoModal.url,
+                        description: activePhotoModal.desc,
+                      };
                     setActivePhotoModal(null);
                     setEditingPhoto(target);
                     setEditPhotoUrl(target.url);

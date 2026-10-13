@@ -1,11 +1,33 @@
 import { SpecimenRecord } from '../types/specimen';
+import { getObfuscatedCoordinates } from './geoprivacy';
 
-export function formatDarwinCoreRecord(specimen: SpecimenRecord) {
+export function formatDarwinCoreRecord(specimen: SpecimenRecord, obfuscateCoordinates = false) {
+  const sightings = specimen.sightings || [];
+  const individualCount =
+    sightings.length > 0
+      ? sightings.reduce((acc, s) => acc + (s.individualsCount || s.count || 1), 0)
+      : 1;
+
+  let lat = specimen.georeference.latitude;
+  let lng = specimen.georeference.longitude;
+  let uncertainty = specimen.georeference.accuracyMeters;
+  let informationWithheld = '';
+
+  if (obfuscateCoordinates) {
+    const obf = getObfuscatedCoordinates(lat, lng, specimen.id, 3.5);
+    lat = obf.lat;
+    lng = obf.lng;
+    uncertainty = Math.max(uncertainty, obf.radiusMeters);
+    informationWithheld =
+      'Coordenadas geográficas difuminadas a radio de 3.5 km por protocolo de geoprivacidad SINAC/UICN para proteger naciente de especie amenazada o microendémica.';
+  }
+
   return {
     occurrenceID: `urn:catalog:${specimen.institutionCode}:${specimen.catalogNumber.replace('CAT. ', '')}`,
     basisOfRecord: 'HumanObservation',
     scientificName: specimen.scientificName,
     vernacularName: specimen.commonName,
+    individualCount,
     kingdom: specimen.taxonomy.kingdom,
     phylum: specimen.taxonomy.phylum,
     class: specimen.taxonomy.class,
@@ -20,10 +42,12 @@ export function formatDarwinCoreRecord(specimen: SpecimenRecord) {
     countryCode: 'CR',
     stateProvince: specimen.georeference.province,
     locality: specimen.georeference.locality,
-    decimalLatitude: specimen.georeference.latitude,
-    decimalLongitude: specimen.georeference.longitude,
-    verbatimCoordinates: `${specimen.georeference.latitudeDMS}, ${specimen.georeference.longitudeDMS}`,
-    coordinateUncertaintyInMeters: specimen.georeference.accuracyMeters,
+    decimalLatitude: lat,
+    decimalLongitude: lng,
+    verbatimCoordinates: obfuscateCoordinates
+      ? `${lat}° N, ${lng}° W (Zona difuminada)`
+      : `${specimen.georeference.latitudeDMS}, ${specimen.georeference.longitudeDMS}`,
+    coordinateUncertaintyInMeters: uncertainty,
     geodeticDatum: specimen.georeference.datum,
     minimumElevationInMeters: specimen.georeference.elevationMeters,
     habitat: specimen.georeference.microhabitat,
@@ -38,6 +62,7 @@ export function formatDarwinCoreRecord(specimen: SpecimenRecord) {
     citesAppendix: specimen.citesStatus.appendix,
     lifeStage: 'Adult',
     sex: 'Male',
+    informationWithheld: informationWithheld || undefined,
     dynamicProperties: JSON.stringify({
       snoutVentLengthMm: specimen.morphometrics.snoutVentLengthMm,
       coloration: specimen.morphometrics.colorationAndAnatomy,
@@ -63,9 +88,9 @@ export function exportDarwinCoreJson(specimen: SpecimenRecord) {
   URL.revokeObjectURL(url);
 }
 
-export function exportDarwinCoreCsv(specimens: SpecimenRecord[]) {
+export function exportDarwinCoreCsv(specimens: SpecimenRecord[], obfuscateCoordinates = false) {
   if (specimens.length === 0) return;
-  const records = specimens.map(formatDarwinCoreRecord);
+  const records = specimens.map((s) => formatDarwinCoreRecord(s, obfuscateCoordinates));
   const headers = Object.keys(records[0]) as (keyof typeof records[0])[];
 
   const csvRows = [

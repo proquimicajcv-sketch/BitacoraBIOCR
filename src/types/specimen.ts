@@ -109,7 +109,7 @@ export interface SpecimenRecord {
   darwinCoreSync: boolean;
   
   iucnStatus: {
-    code: 'LC' | 'NT' | 'VU' | 'EN' | 'CR';
+    code: 'LC' | 'NT' | 'VU' | 'EN' | 'CR' | 'EW' | 'EX' | 'DD';
     label: string;
     trend: string;
   };

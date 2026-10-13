@@ -1,5 +1,6 @@
 import React from 'react';
 import { SpecimenRecord } from '../types/specimen';
+import { ThemeSwitcher } from './ThemeSwitcher';
 
 interface CoverLandingViewProps {
   onOpenDetail: () => void;
@@ -73,15 +74,17 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
                 Elaborado por
               </span>
               <span className="text-xs font-bold text-white tracking-wide">
-                Ing. Jorge Carvajal V.
+                {observerName || 'Ing. Carvajal V.'}
               </span>
             </div>
           </div>
 
+          <ThemeSwitcher compact />
+
           <button
             onClick={onOpenDeviceProfile}
             className="px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md border border-[#6cf8bb]/50 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-            title="Gestión de este Dispositivo (Aislado sin cuentas)"
+            title="Gestión de este Dispositivo"
           >
             <span className="material-symbols-outlined text-[16px]">devices</span>
             <span className="hidden sm:inline">Dispositivo {deviceId ? `(${deviceId})` : ''}</span>
@@ -91,10 +94,10 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
           <button
             onClick={onOpenSyncBackup}
             className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-            title="Respaldo JSON y persistencia multi-dispositivo"
+            title="Sincronización multi-dispositivo y respaldo JSON"
           >
             <span className="material-symbols-outlined text-[16px]">sync_saved_locally</span>
-            <span className="hidden sm:inline">Respaldo JSON</span>
+            <span className="hidden sm:inline">Sincronizar / JSON</span>
           </button>
         </div>
       </header>

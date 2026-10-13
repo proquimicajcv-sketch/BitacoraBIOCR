@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { SpecimenRecord, BioacousticRecord } from './types/specimen';
 import { INITIAL_SPECIMENS } from './data/initialSpecimens';
 import { CoverLandingView } from './components/CoverLandingView';
@@ -43,9 +43,14 @@ export default function App() {
   const [deviceId] = useState<string>(() => getOrCreateDeviceId());
   const [observerName, setObserverName] = useState<string>(() => {
     try {
-      return localStorage.getItem(OBSERVER_NAME_KEY) || 'Ing. Jorge Carvajal V.';
+      const stored = localStorage.getItem(OBSERVER_NAME_KEY);
+      if (!stored || stored.includes('Carvajal')) {
+        localStorage.setItem(OBSERVER_NAME_KEY, 'Ing. Carvajal V.');
+        return 'Ing. Carvajal V.';
+      }
+      return stored;
     } catch {
-      return 'Ing. Jorge Carvajal V.';
+      return 'Ing. Carvajal V.';
     }
   });
   const [deviceName, setDeviceName] = useState<string>(() => {
@@ -98,14 +103,54 @@ export default function App() {
                   return dateB.localeCompare(dateA);
                 });
 
-                const existingPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
+                // Ensure sight-dota-20261009 and curious finding has the correct one-eyed male photo
+                mergedSightings = mergedSightings.map((s) => {
+                  if (s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho')) {
+                    const isWrongUrl = !s.curiousFindingPhoto ||
+                      s.curiousFindingPhoto.includes('isthmohyla_nacientes.jpg') ||
+                      s.curiousFindingPhoto.includes('eye_zoom');
+                    return {
+                      ...s,
+                      curiousFindingPhoto: isWrongUrl ? '/hallazgo_macho_un_ojo.jpg' : s.curiousFindingPhoto,
+                      photoUrls: isWrongUrl ? ['/hallazgo_macho_un_ojo.jpg'] : (s.photoUrls || ['/hallazgo_macho_un_ojo.jpg']),
+                    };
+                  }
+                  return s;
+                });
+
+                const rawPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
                   ? item.additionalPhotos
                   : INITIAL_SPECIMENS[0].additionalPhotos;
+
+                // Ensure photo-3 (Detalle Ocular) ALWAYS keeps the eye zoom macro and photo-4 keeps macho tuerto
+                let cleanedPhotos = (rawPhotos || []).map((p) => {
+                  if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
+                    return {
+                      ...p,
+                      url: '/isthmohyla_nacientes_eye_zoom.jpg',
+                      label: 'Detalle Ocular',
+                      description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
+                    };
+                  }
+                  return p;
+                });
+
+                const hasPhoto4 = cleanedPhotos.some(
+                  (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
+                );
+                if (!hasPhoto4) {
+                  cleanedPhotos.push({
+                    id: 'photo-4',
+                    url: '/hallazgo_macho_un_ojo.jpg',
+                    label: 'Hallazgo: Macho Tuerto',
+                    description: 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural). Era el que cantaba con mayor potencia acústica a 45 cm del caudal.',
+                  });
+                }
 
                 return {
                   ...item,
                   heroImage: '/isthmohyla_nacientes.jpg',
-                  additionalPhotos: existingPhotos,
+                  additionalPhotos: cleanedPhotos,
                   sightings: mergedSightings,
                   morphometrics: {
                     ...item.morphometrics,
@@ -170,68 +215,139 @@ export default function App() {
     }).catch(() => {});
   };
 
-  // Check isolated server backup for THIS specific device ID if available (no cross-device mixing)
-  useEffect(() => {
-    const hasLocalChanges = localStorage.getItem(CHANGED_KEY) === 'true';
-    const localTimestamp = Number(localStorage.getItem(TIMESTAMP_KEY) || '0');
+  // Multi-device central server synchronization handler
+  const syncWithServer = useCallback(async (silent = true) => {
+    try {
+      const res = await fetch('/api/database/specimens');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        const serverTimestamp = Number(data.lastModified || '0');
+        const localTimestamp = Number(localStorage.getItem(TIMESTAMP_KEY) || '0');
+        const hasLocalChanges = localStorage.getItem(CHANGED_KEY) === 'true';
 
-    // Query server only for this device's backup
-    fetch(`/api/database/specimens?deviceId=${encodeURIComponent(deviceId)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.deviceId === deviceId && Array.isArray(data.data) && data.data.length > 0) {
-          const serverTimestamp = Number(data.lastModified || '0');
-          if (!hasLocalChanges || serverTimestamp > localTimestamp) {
-            const sanitized = data.data.map((item: SpecimenRecord) => {
-              if (
-                item.scientificName === 'Isthmohyla nacientes' ||
-                item.id === INITIAL_SPECIMENS[0].id
-              ) {
-                const existingSightings = item.sightings || [];
-                const dotaSightExists = existingSightings.some((s) => s.id === 'sight-dota-20261009');
-                let mergedSightings = dotaSightExists
-                  ? existingSightings
-                  : [INITIAL_SPECIMENS[0].sightings![0], ...existingSightings];
+        // Update when server has newer records or during forced sync
+        if (!hasLocalChanges || serverTimestamp > localTimestamp || !silent) {
+          const sanitized = data.data.map((item: SpecimenRecord) => {
+            if (
+              item.scientificName === 'Isthmohyla nacientes' ||
+              item.id === INITIAL_SPECIMENS[0].id
+            ) {
+              const existingSightings = item.sightings || [];
+              const dotaSightExists = existingSightings.some((s) => s.id === 'sight-dota-20261009');
+              let mergedSightings = dotaSightExists
+                ? existingSightings
+                : [INITIAL_SPECIMENS[0].sightings![0], ...existingSightings];
 
-                // Auto-sort chronologically by date descending
-                mergedSightings = [...mergedSightings].sort((a, b) => {
-                  const dateA = a.date || a.timestamp || '';
-                  const dateB = b.date || b.timestamp || '';
-                  return dateB.localeCompare(dateA);
+              // Auto-sort chronologically by date descending
+              mergedSightings = [...mergedSightings].sort((a, b) => {
+                const dateA = a.date || a.timestamp || '';
+                const dateB = b.date || b.timestamp || '';
+                return dateB.localeCompare(dateA);
+              });
+
+              mergedSightings = mergedSightings.map((s) => {
+                if (s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho')) {
+                  const isWrongUrl = !s.curiousFindingPhoto ||
+                    s.curiousFindingPhoto.includes('isthmohyla_nacientes.jpg') ||
+                    s.curiousFindingPhoto.includes('eye_zoom');
+                  return {
+                    ...s,
+                    curiousFindingPhoto: isWrongUrl ? '/hallazgo_macho_un_ojo.jpg' : s.curiousFindingPhoto,
+                    photoUrls: isWrongUrl ? ['/hallazgo_macho_un_ojo.jpg'] : (s.photoUrls || ['/hallazgo_macho_un_ojo.jpg']),
+                  };
+                }
+                return s;
+              });
+
+              const rawPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
+                ? item.additionalPhotos
+                : INITIAL_SPECIMENS[0].additionalPhotos;
+
+              let cleanedPhotos = (rawPhotos || []).map((p) => {
+                if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
+                  return {
+                    ...p,
+                    url: '/isthmohyla_nacientes_eye_zoom.jpg',
+                    label: 'Detalle Ocular',
+                    description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
+                  };
+                }
+                return p;
+              });
+
+              const hasPhoto4 = cleanedPhotos.some(
+                (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
+              );
+              if (!hasPhoto4) {
+                cleanedPhotos.push({
+                  id: 'photo-4',
+                  url: '/hallazgo_macho_un_ojo.jpg',
+                  label: 'Hallazgo: Macho Tuerto',
+                  description: 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural). Era el que cantaba con mayor potencia acústica a 45 cm del caudal.',
                 });
-
-                const existingPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
-                  ? item.additionalPhotos
-                  : INITIAL_SPECIMENS[0].additionalPhotos;
-
-                return {
-                  ...item,
-                  heroImage: '/isthmohyla_nacientes.jpg',
-                  additionalPhotos: existingPhotos,
-                  sightings: mergedSightings,
-                  morphometrics: {
-                    ...item.morphometrics,
-                    courtshipAndMating: INITIAL_SPECIMENS[0].morphometrics.courtshipAndMating,
-                  },
-                };
               }
-              return item;
-            });
-            setSpecimens(sanitized);
-            if (sanitized.length > 0) {
-              setCurrentSpecimen(sanitized[0]);
+
+              return {
+                ...item,
+                heroImage: '/isthmohyla_nacientes.jpg',
+                additionalPhotos: cleanedPhotos,
+                sightings: mergedSightings,
+                morphometrics: {
+                  ...item.morphometrics,
+                  courtshipAndMating: INITIAL_SPECIMENS[0].morphometrics.courtshipAndMating,
+                },
+              };
             }
-            try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
-              if (serverTimestamp) {
-                localStorage.setItem(TIMESTAMP_KEY, String(serverTimestamp));
-              }
-            } catch {}
+            return item;
+          });
+
+          setSpecimens(sanitized);
+          if (sanitized.length > 0) {
+            setCurrentSpecimen(sanitized[0]);
+          }
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+            if (serverTimestamp) {
+              localStorage.setItem(TIMESTAMP_KEY, String(serverTimestamp));
+            }
+          } catch {}
+
+          if (!silent) {
+            setSyncStatusToast(`¡Sincronizado! Se cargaron ${sanitized.length} registros actualizados de la bitácora.`);
+            setTimeout(() => setSyncStatusToast(null), 3500);
           }
         }
-      })
-      .catch((err) => console.log('Modo local/offline activo:', err));
-  }, [deviceId]);
+      }
+    } catch {
+      // Offline fallback: continue using local storage
+    }
+  }, []);
+
+  // Multi-device listeners: sync on mount, window focus, visibility change, and interval
+  useEffect(() => {
+    syncWithServer(true);
+
+    const onFocus = () => syncWithServer(true);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncWithServer(true);
+      }
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Periodic poll every 12 seconds to ensure laptops and mobile devices stay in sync
+    const interval = setInterval(() => {
+      syncWithServer(true);
+    }, 12000);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
+    };
+  }, [syncWithServer]);
 
   // Handle saving new or edited specimen
   const handleSaveSpecimen = (savedSpecimen: SpecimenRecord) => {
@@ -279,7 +395,7 @@ export default function App() {
     persistSpecimens(updated);
   };
 
-  // Handle importing JSON records
+  // Handle importing JSON records and broadcasting to all devices
   const handleImportSpecimens = (imported: SpecimenRecord[], replace: boolean) => {
     let result: SpecimenRecord[];
     if (replace) {
@@ -293,9 +409,23 @@ export default function App() {
     if (result.length > 0) {
       setCurrentSpecimen(result[0]);
     }
+
+    // Immediately push to central database so all other devices receive this JSON data
+    fetch('/api/database/import-json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ specimens: result }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          setSyncStatusToast(`¡Bitácora JSON importada y sincronizada en todos tus dispositivos (${result.length} registros)!`);
+        }
+      })
+      .catch(() => {});
   };
 
-  // Server sync action (isolated per device)
+  // Manual server sync action (accessible via modal / header)
   const handleSyncServer = async () => {
     setIsSyncingServer(true);
     try {
@@ -306,7 +436,7 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        setSyncStatusToast(`¡Copia de seguridad guardada! ${specimens.length} registros respaldados para ${deviceId}.`);
+        setSyncStatusToast(`¡Sincronizado! Lo que agregaste en tu laptop ya está disponible en todos tus demás dispositivos.`);
       } else {
         setSyncStatusToast('No se pudo guardar en el servidor: ' + data.error);
       }

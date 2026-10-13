@@ -177,19 +177,19 @@ export const SyncBackupModal: React.FC<SyncBackupModalProps> = ({
             </div>
           </div>
 
-          {/* Section 1: Server Device-Isolated Persistence */}
+          {/* Section 1: Multi-Device Server Synchronization */}
           <div className="p-3.5 rounded-xl bg-[#f8faf4] border border-[#c1c8c3] flex flex-col gap-2.5">
             <div className="flex items-center justify-between">
               <span className="font-bold text-[#002217] flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[#006c49] text-[18px]">cloud_sync</span>
-                Copia en la Nube / Servidor ({deviceId || 'Este Dispositivo'})
+                Sincronización Multi-Dispositivo (Laptop ↔ Celular ↔ Tablet)
               </span>
               <span className="font-mono text-[10px] text-[#006c49] bg-white px-2 py-0.5 rounded border border-[#c1c8c3]/40 font-bold">
-                {specimens.length} Registros
+                {specimens.length} Registros Activos
               </span>
             </div>
-            <p className="text-[#414844]">
-              Guarda una copia de seguridad en el servidor vinculada de forma <strong>aislada a este dispositivo</strong> ({deviceId}). Tus avistamientos no se mezclarán ni se vincularán con los de otros celulares o computadoras.
+            <p className="text-[#414844] leading-relaxed">
+              Lo que agregas o editas en tu laptop se sincroniza en el servidor central y se <strong>actualiza automáticamente en todos tus demás dispositivos</strong> en tiempo real.
             </p>
             <button
               onClick={onSyncServer}
@@ -199,7 +199,7 @@ export const SyncBackupModal: React.FC<SyncBackupModalProps> = ({
               <span className={`material-symbols-outlined text-[18px] text-[#6cf8bb] ${isSyncingServer ? 'animate-spin' : ''}`}>
                 {isSyncingServer ? 'sync' : 'cloud_upload'}
               </span>
-              <span>{isSyncingServer ? 'Guardando en Servidor...' : 'Guardar Copia Aislada en Servidor'}</span>
+              <span>{isSyncingServer ? 'Sincronizando con Servidor...' : 'Sincronizar Ahora con Todos los Dispositivos'}</span>
             </button>
           </div>
 
