@@ -28,6 +28,8 @@ export const SyncBackupModal: React.FC<SyncBackupModalProps> = ({
   const [pastedJson, setPastedJson] = useState('');
   const [copiedToast, setCopiedToast] = useState(false);
 
+  const totalSightings = specimens.reduce((acc, s) => acc + (s.sightings?.length || 0), 0);
+
   // Export entire database as JSON file
   const handleExportJSON = () => {
     const backupData = {
@@ -36,6 +38,7 @@ export const SyncBackupModal: React.FC<SyncBackupModalProps> = ({
       country: 'Costa Rica',
       system: 'BioBitácora CR - Canopy Field Log',
       totalRecords: specimens.length,
+      totalSightings,
       specimens,
     };
 
@@ -49,7 +52,7 @@ export const SyncBackupModal: React.FC<SyncBackupModalProps> = ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setImportStatus(`Respaldo descargado exitosamente (${specimens.length} especímenes con URLs de fotos y avistamientos).`);
+    setImportStatus(`Respaldo descargado exitosamente (${specimens.length} especies, ${totalSightings} avistamientos y fotos).`);
   };
 
   // Copy JSON directly to clipboard
@@ -59,6 +62,7 @@ export const SyncBackupModal: React.FC<SyncBackupModalProps> = ({
         version: '1.2',
         exportedAt: new Date().toISOString(),
         totalRecords: specimens.length,
+        totalSightings,
         specimens,
       };
       await navigator.clipboard.writeText(JSON.stringify(backupData, null, 2));
@@ -185,7 +189,7 @@ export const SyncBackupModal: React.FC<SyncBackupModalProps> = ({
                 Sincronización Multi-Dispositivo (Laptop ↔ Celular ↔ Tablet)
               </span>
               <span className="font-mono text-[10px] text-[#006c49] bg-white px-2 py-0.5 rounded border border-[#c1c8c3]/40 font-bold">
-                {specimens.length} Registros Activos
+                {specimens.length} Especies • {totalSightings} Avistamientos
               </span>
             </div>
             <p className="text-[#414844] leading-relaxed">

@@ -39,6 +39,173 @@ function getOrCreateDeviceId(): string {
   }
 }
 
+function mergeSpecimenLists(existingList: SpecimenRecord[], incomingList: SpecimenRecord[]): SpecimenRecord[] {
+  if (!Array.isArray(existingList) || existingList.length === 0) return incomingList;
+  if (!Array.isArray(incomingList) || incomingList.length === 0) return existingList;
+
+  const result: SpecimenRecord[] = [...existingList];
+
+  for (const incoming of incomingList) {
+    const idx = result.findIndex(
+      (e) => (incoming.id && e.id === incoming.id) ||
+             (incoming.scientificName && e.scientificName === incoming.scientificName)
+    );
+
+    if (idx === -1) {
+      result.push(incoming);
+    } else {
+      const existing = result[idx];
+
+      // Union of sightings by id: NEVER lose a sighting from either local or server!
+      const existingSightings = Array.isArray(existing.sightings) ? existing.sightings : [];
+      const incomingSightings = Array.isArray(incoming.sightings) ? incoming.sightings : [];
+
+      const sightingMap = new Map<string, any>();
+      for (const s of existingSightings) {
+        if (s && s.id) sightingMap.set(s.id, s);
+      }
+      for (const s of incomingSightings) {
+        if (s && s.id) {
+          const old = sightingMap.get(s.id);
+          sightingMap.set(s.id, old ? { ...old, ...s } : s);
+        }
+      }
+
+      const mergedSightings = Array.from(sightingMap.values()).sort((a, b) => {
+        const dateA = a.date || a.timestamp || '';
+        const dateB = b.date || b.timestamp || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      // Union of additional photos
+      const existingPhotos = Array.isArray(existing.additionalPhotos) ? existing.additionalPhotos : [];
+      const incomingPhotos = Array.isArray(incoming.additionalPhotos) ? incoming.additionalPhotos : [];
+      const photoMap = new Map<string, any>();
+      for (const p of existingPhotos) {
+        if (p && (p.id || p.label)) photoMap.set(p.id || p.label, p);
+      }
+      for (const p of incomingPhotos) {
+        if (p && (p.id || p.label)) {
+          const key = p.id || p.label;
+          const old = photoMap.get(key);
+          photoMap.set(key, old ? { ...old, ...p } : p);
+        }
+      }
+
+      result[idx] = {
+        ...existing,
+        ...incoming,
+        sightings: mergedSightings,
+        additionalPhotos: Array.from(photoMap.values()),
+      };
+    }
+  }
+
+  return result;
+}
+
+function sanitizeSpecimens(list: SpecimenRecord[]): SpecimenRecord[] {
+  const demoIdsToPurge = new Set([
+    'cr-bio-2024-9104', // Oophaga pumilio
+    'cr-bio-2024-7731', // Pharomachrus mocinno
+    'cr-bio-2024-6420', // Morpho peleides
+    'cr-bio-2025-0199', // Tapirus bairdii
+    'cr-bio-2025-0312', // Bothriechis schlegelii
+    'cr-bio-2025-0455', // Guarianthe skinneri
+    'cr-bio-2024-8842', // Agalychnis old
+  ]);
+
+  let filtered = (list || [])
+    .filter((item) => !demoIdsToPurge.has(item.id))
+    .map((item) => {
+      if (item.scientificName === 'Agalychnis callidryas') {
+        return INITIAL_SPECIMENS[0];
+      }
+      if (
+        item.scientificName === 'Isthmohyla nacientes' ||
+        item.id === INITIAL_SPECIMENS[0].id
+      ) {
+        const existingSightings = item.sightings || [];
+        const dotaSightExists = existingSightings.some((s) => s.id === 'sight-dota-20261009');
+        let mergedSightings = dotaSightExists
+          ? existingSightings
+          : [INITIAL_SPECIMENS[0].sightings![0], ...existingSightings];
+
+        // Auto-sort chronologically by date descending (most recent visit first)
+        mergedSightings = [...mergedSightings].sort((a, b) => {
+          const dateA = a.date || a.timestamp || '';
+          const dateB = b.date || b.timestamp || '';
+          return dateB.localeCompare(dateA);
+        });
+
+        // Ensure sight-dota-20261009 and curious finding has the correct one-eyed male photo
+        mergedSightings = mergedSightings.map((s) => {
+          if (s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho')) {
+            const isWrongUrl = !s.curiousFindingPhoto ||
+              s.curiousFindingPhoto.includes('isthmohyla_nacientes.jpg') ||
+              s.curiousFindingPhoto.includes('eye_zoom');
+            return {
+              ...s,
+              curiousFindingPhoto: isWrongUrl ? '/hallazgo_macho_un_ojo.jpg' : s.curiousFindingPhoto,
+              photoUrls: isWrongUrl ? ['/hallazgo_macho_un_ojo.jpg'] : (s.photoUrls || ['/hallazgo_macho_un_ojo.jpg']),
+            };
+          }
+          return s;
+        });
+
+        const rawPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
+          ? item.additionalPhotos
+          : INITIAL_SPECIMENS[0].additionalPhotos;
+
+        // Ensure photo-3 (Detalle Ocular) ALWAYS keeps the eye zoom macro and photo-4 keeps macho tuerto
+        let cleanedPhotos = (rawPhotos || []).map((p) => {
+          if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
+            return {
+              ...p,
+              url: '/isthmohyla_nacientes_eye_zoom.jpg',
+              label: 'Detalle Ocular',
+              description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
+            };
+          }
+          return p;
+        });
+
+        const hasPhoto4 = cleanedPhotos.some(
+          (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
+        );
+        if (!hasPhoto4) {
+          cleanedPhotos.push({
+            id: 'photo-4',
+            url: '/hallazgo_macho_un_ojo.jpg',
+            label: 'Hallazgo: Macho Tuerto',
+            description: 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural). Era el que cantaba con mayor potencia acústica a 45 cm del caudal.',
+          });
+        }
+
+        return {
+          ...item,
+          heroImage: '/isthmohyla_nacientes.jpg',
+          additionalPhotos: cleanedPhotos,
+          sightings: mergedSightings,
+          morphometrics: {
+            ...item.morphometrics,
+            courtshipAndMating: INITIAL_SPECIMENS[0].morphometrics.courtshipAndMating,
+          },
+        };
+      }
+      return item;
+    });
+
+  const hasNacientes = filtered.some(
+    (s) => s.scientificName === 'Isthmohyla nacientes' || s.id === INITIAL_SPECIMENS[0].id
+  );
+  if (!hasNacientes) {
+    filtered = [INITIAL_SPECIMENS[0], ...filtered];
+  }
+
+  return filtered;
+}
+
 export default function App() {
   const [deviceId] = useState<string>(() => getOrCreateDeviceId());
   const [observerName, setObserverName] = useState<string>(() => {
@@ -69,108 +236,9 @@ export default function App() {
       if (saved) {
         let parsed: SpecimenRecord[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Keep ONLY user-created specimens and Isthmohyla nacientes; purge old demo specimens
-          const demoIdsToPurge = new Set([
-            'cr-bio-2024-9104', // Oophaga pumilio
-            'cr-bio-2024-7731', // Pharomachrus mocinno
-            'cr-bio-2024-6420', // Morpho peleides
-            'cr-bio-2025-0199', // Tapirus bairdii
-            'cr-bio-2025-0312', // Bothriechis schlegelii
-            'cr-bio-2025-0455', // Guarianthe skinneri
-            'cr-bio-2024-8842', // Agalychnis old
-          ]);
-
-          let filtered = parsed
-            .filter((item) => !demoIdsToPurge.has(item.id))
-            .map((item) => {
-              if (item.scientificName === 'Agalychnis callidryas') {
-                return INITIAL_SPECIMENS[0];
-              }
-              if (
-                item.scientificName === 'Isthmohyla nacientes' ||
-                item.id === INITIAL_SPECIMENS[0].id
-              ) {
-                const existingSightings = item.sightings || [];
-                const dotaSightExists = existingSightings.some((s) => s.id === 'sight-dota-20261009');
-                let mergedSightings = dotaSightExists
-                  ? existingSightings
-                  : [INITIAL_SPECIMENS[0].sightings![0], ...existingSightings];
-
-                // Auto-sort chronologically by date descending (most recent visit first)
-                mergedSightings = [...mergedSightings].sort((a, b) => {
-                  const dateA = a.date || a.timestamp || '';
-                  const dateB = b.date || b.timestamp || '';
-                  return dateB.localeCompare(dateA);
-                });
-
-                // Ensure sight-dota-20261009 and curious finding has the correct one-eyed male photo
-                mergedSightings = mergedSightings.map((s) => {
-                  if (s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho')) {
-                    const isWrongUrl = !s.curiousFindingPhoto ||
-                      s.curiousFindingPhoto.includes('isthmohyla_nacientes.jpg') ||
-                      s.curiousFindingPhoto.includes('eye_zoom');
-                    return {
-                      ...s,
-                      curiousFindingPhoto: isWrongUrl ? '/hallazgo_macho_un_ojo.jpg' : s.curiousFindingPhoto,
-                      photoUrls: isWrongUrl ? ['/hallazgo_macho_un_ojo.jpg'] : (s.photoUrls || ['/hallazgo_macho_un_ojo.jpg']),
-                    };
-                  }
-                  return s;
-                });
-
-                const rawPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
-                  ? item.additionalPhotos
-                  : INITIAL_SPECIMENS[0].additionalPhotos;
-
-                // Ensure photo-3 (Detalle Ocular) ALWAYS keeps the eye zoom macro and photo-4 keeps macho tuerto
-                let cleanedPhotos = (rawPhotos || []).map((p) => {
-                  if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
-                    return {
-                      ...p,
-                      url: '/isthmohyla_nacientes_eye_zoom.jpg',
-                      label: 'Detalle Ocular',
-                      description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
-                    };
-                  }
-                  return p;
-                });
-
-                const hasPhoto4 = cleanedPhotos.some(
-                  (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
-                );
-                if (!hasPhoto4) {
-                  cleanedPhotos.push({
-                    id: 'photo-4',
-                    url: '/hallazgo_macho_un_ojo.jpg',
-                    label: 'Hallazgo: Macho Tuerto',
-                    description: 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural). Era el que cantaba con mayor potencia acústica a 45 cm del caudal.',
-                  });
-                }
-
-                return {
-                  ...item,
-                  heroImage: '/isthmohyla_nacientes.jpg',
-                  additionalPhotos: cleanedPhotos,
-                  sightings: mergedSightings,
-                  morphometrics: {
-                    ...item.morphometrics,
-                    courtshipAndMating: INITIAL_SPECIMENS[0].morphometrics.courtshipAndMating,
-                  },
-                };
-              }
-              return item;
-            });
-
-          // Ensure Isthmohyla nacientes is present as the primary record
-          const hasNacientes = filtered.some(
-            (s) => s.scientificName === 'Isthmohyla nacientes' || s.id === INITIAL_SPECIMENS[0].id
-          );
-          if (!hasNacientes) {
-            filtered = [INITIAL_SPECIMENS[0], ...filtered];
-          }
-
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
-          return filtered;
+          const sanitized = sanitizeSpecimens(parsed);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+          return sanitized;
         }
       }
     } catch {
@@ -195,25 +263,58 @@ export default function App() {
     lifeZone?: string;
   } | undefined>(undefined);
 
-  // Centralized robust persistence helper (isolated per device)
-  const persistSpecimens = (updated: SpecimenRecord[]) => {
-    setSpecimens(updated);
+  // Centralized robust persistence helper (immediate local + automatic server sync)
+  const persistSpecimens = async (updated: SpecimenRecord[]) => {
+    const sanitized = sanitizeSpecimens(updated);
+    setSpecimens(sanitized);
     const now = Date.now();
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
       localStorage.setItem(TIMESTAMP_KEY, String(now));
       localStorage.setItem(CHANGED_KEY, 'true');
     } catch (e) {
       console.warn('LocalStorage error:', e);
     }
 
-    // Isolated background-save to server keyed by this deviceId
-    fetch('/api/database/specimens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ specimens: updated, lastModified: now, deviceId }),
-    }).catch(() => {});
+    // Save and merge on central server so ALL devices stay synchronized
+    try {
+      const res = await fetch('/api/database/specimens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ specimens: sanitized, lastModified: now, deviceId }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        const serverMerged = sanitizeSpecimens(data.data);
+        setSpecimens(serverMerged);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(serverMerged));
+          localStorage.setItem(TIMESTAMP_KEY, String(data.lastModified || now));
+          localStorage.removeItem(CHANGED_KEY);
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('Servidor offline o sincronizando en segundo plano:', err);
+    }
   };
+
+  // Keep currentSpecimen synchronized whenever specimens changes (e.g. after adding a sighting)
+  useEffect(() => {
+    if (currentSpecimen && specimens.length > 0) {
+      const fresh = specimens.find((s) => s.id === currentSpecimen.id);
+      if (fresh) {
+        if (
+          fresh.sightings?.length !== currentSpecimen.sightings?.length ||
+          fresh.additionalPhotos?.length !== currentSpecimen.additionalPhotos?.length ||
+          JSON.stringify(fresh.sightings) !== JSON.stringify(currentSpecimen.sightings)
+        ) {
+          setCurrentSpecimen(fresh);
+        }
+      } else {
+        setCurrentSpecimen(specimens[0]);
+      }
+    }
+  }, [specimens]);
 
   // Multi-device central server synchronization handler
   const syncWithServer = useCallback(async (silent = true) => {
@@ -221,107 +322,41 @@ export default function App() {
       const res = await fetch('/api/database/specimens');
       const data = await res.json();
       if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-        const serverTimestamp = Number(data.lastModified || '0');
-        const localTimestamp = Number(localStorage.getItem(TIMESTAMP_KEY) || '0');
-        const hasLocalChanges = localStorage.getItem(CHANGED_KEY) === 'true';
+        setSpecimens((prevLocal) => {
+          // Smart-merge with current local specimens so NO local sightings or records are ever lost
+          const merged = mergeSpecimenLists(prevLocal, data.data);
+          const sanitized = sanitizeSpecimens(merged);
 
-        // Update when server has newer records or during forced sync
-        if (!hasLocalChanges || serverTimestamp > localTimestamp || !silent) {
-          const sanitized = data.data.map((item: SpecimenRecord) => {
-            if (
-              item.scientificName === 'Isthmohyla nacientes' ||
-              item.id === INITIAL_SPECIMENS[0].id
-            ) {
-              const existingSightings = item.sightings || [];
-              const dotaSightExists = existingSightings.some((s) => s.id === 'sight-dota-20261009');
-              let mergedSightings = dotaSightExists
-                ? existingSightings
-                : [INITIAL_SPECIMENS[0].sightings![0], ...existingSightings];
-
-              // Auto-sort chronologically by date descending
-              mergedSightings = [...mergedSightings].sort((a, b) => {
-                const dateA = a.date || a.timestamp || '';
-                const dateB = b.date || b.timestamp || '';
-                return dateB.localeCompare(dateA);
-              });
-
-              mergedSightings = mergedSightings.map((s) => {
-                if (s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho')) {
-                  const isWrongUrl = !s.curiousFindingPhoto ||
-                    s.curiousFindingPhoto.includes('isthmohyla_nacientes.jpg') ||
-                    s.curiousFindingPhoto.includes('eye_zoom');
-                  return {
-                    ...s,
-                    curiousFindingPhoto: isWrongUrl ? '/hallazgo_macho_un_ojo.jpg' : s.curiousFindingPhoto,
-                    photoUrls: isWrongUrl ? ['/hallazgo_macho_un_ojo.jpg'] : (s.photoUrls || ['/hallazgo_macho_un_ojo.jpg']),
-                  };
-                }
-                return s;
-              });
-
-              const rawPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
-                ? item.additionalPhotos
-                : INITIAL_SPECIMENS[0].additionalPhotos;
-
-              let cleanedPhotos = (rawPhotos || []).map((p) => {
-                if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
-                  return {
-                    ...p,
-                    url: '/isthmohyla_nacientes_eye_zoom.jpg',
-                    label: 'Detalle Ocular',
-                    description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
-                  };
-                }
-                return p;
-              });
-
-              const hasPhoto4 = cleanedPhotos.some(
-                (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
-              );
-              if (!hasPhoto4) {
-                cleanedPhotos.push({
-                  id: 'photo-4',
-                  url: '/hallazgo_macho_un_ojo.jpg',
-                  label: 'Hallazgo: Macho Tuerto',
-                  description: 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural). Era el que cantaba con mayor potencia acústica a 45 cm del caudal.',
-                });
-              }
-
-              return {
-                ...item,
-                heroImage: '/isthmohyla_nacientes.jpg',
-                additionalPhotos: cleanedPhotos,
-                sightings: mergedSightings,
-                morphometrics: {
-                  ...item.morphometrics,
-                  courtshipAndMating: INITIAL_SPECIMENS[0].morphometrics.courtshipAndMating,
-                },
-              };
-            }
-            return item;
-          });
-
-          setSpecimens(sanitized);
-          if (sanitized.length > 0) {
-            setCurrentSpecimen(sanitized[0]);
-          }
           try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
-            if (serverTimestamp) {
-              localStorage.setItem(TIMESTAMP_KEY, String(serverTimestamp));
+            if (data.lastModified) {
+              localStorage.setItem(TIMESTAMP_KEY, String(data.lastModified));
             }
           } catch {}
 
-          if (!silent) {
-            setSyncStatusToast(`¡Sincronizado! Se cargaron ${sanitized.length} registros actualizados de la bitácora.`);
-            setTimeout(() => setSyncStatusToast(null), 3500);
+          // If local had sightings that the server didn't have yet, push merged back to server!
+          const localSightingsCount = prevLocal.reduce((acc, s) => acc + (s.sightings?.length || 0), 0);
+          const serverSightingsCount = (data.data as SpecimenRecord[]).reduce((acc, s) => acc + (s.sightings?.length || 0), 0);
+          if (localSightingsCount > serverSightingsCount) {
+            fetch('/api/database/specimens', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ specimens: sanitized, lastModified: Date.now(), deviceId }),
+            }).catch(() => {});
           }
+
+          return sanitized;
+        });
+
+        if (!silent) {
+          setSyncStatusToast(`¡Sincronizado! Se cargaron y unificaron todos los avistamientos de la bitácora.`);
+          setTimeout(() => setSyncStatusToast(null), 3500);
         }
       }
     } catch {
       // Offline fallback: continue using local storage
     }
-  }, []);
+  }, [deviceId]);
 
   // Multi-device listeners: sync on mount, window focus, visibility change, and interval
   useEffect(() => {
@@ -337,10 +372,10 @@ export default function App() {
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
 
-    // Periodic poll every 12 seconds to ensure laptops and mobile devices stay in sync
+    // Periodic poll every 8 seconds to ensure laptops and mobile devices stay in real-time sync
     const interval = setInterval(() => {
       syncWithServer(true);
-    }, 12000);
+    }, 8000);
 
     return () => {
       window.removeEventListener('focus', onFocus);
@@ -480,6 +515,11 @@ export default function App() {
           <CoverLandingView
             currentSpecimen={currentSpecimen}
             specimensCount={specimens.length}
+            totalSightingsCount={specimens.reduce((acc, s) => acc + (s.sightings?.length || 0), 0)}
+            totalIndividualsCount={specimens.reduce((acc, s) => {
+              const list = s.sightings || [];
+              return acc + (list.length > 0 ? list.reduce((sub, sight) => sub + (sight.individualsCount || sight.count || 1), 0) : 1);
+            }, 0)}
             onOpenDetail={() => setActiveView('DETAIL')}
             onOpenMap={() => setActiveView('MAP')}
             onOpenCatalog={() => setActiveView('CATALOG')}
@@ -803,7 +843,7 @@ export default function App() {
           } catch {}
         }}
         specimensCount={specimens.length}
-        totalSightingsCount={specimens.reduce((acc, s) => acc + (s.sightings?.length || 1), 0)}
+        totalSightingsCount={specimens.reduce((acc, s) => acc + (s.sightings?.length || 0), 0)}
         onResetToInitial={handleResetToInitial}
         onOpenSyncBackup={() => setIsSyncModalOpen(true)}
       />

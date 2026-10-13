@@ -156,7 +156,7 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
               Catálogo de Especímenes y Registros de Campo
             </h2>
             <p className="text-xs text-[#79a28f]">
-              {specimens.length} especímenes curados • {groupStats.totalIndividuals} individuos contabilizados • Darwin Core
+              {specimens.length} especies curadas • {groupStats.totalSightings} avistamientos de campo • {groupStats.totalIndividuals} individuos contabilizados • Darwin Core
             </p>
           </div>
 
@@ -200,7 +200,7 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
                   Panel de Conteo de Biodiversidad en la Colección
                 </h3>
                 <span className="text-[11px] text-[#717974]">
-                  Conteo general: <strong>{specimens.length}</strong> especies registradas | <strong>{groupStats.totalIndividuals}</strong> individuos en campo
+                  Conteo general: <strong>{specimens.length}</strong> especies registradas | <strong>{groupStats.totalSightings}</strong> avistamientos en campo | <strong>{groupStats.totalIndividuals}</strong> individuos en campo
                 </span>
               </div>
             </div>
@@ -251,7 +251,7 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
                       {tax.label}
                     </span>
                     <span className="text-[10px] text-[#717974] block font-mono">
-                      {data.individuals} inds.
+                      {data.sightings} avist. • {data.individuals} inds.
                     </span>
                   </div>
 
@@ -358,7 +358,7 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
                     {sightingsCount > 0 && (
                       <span className="bg-[#0284c7] text-white font-mono text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm flex items-center gap-0.5">
                         <span className="material-symbols-outlined text-[12px]">visibility</span>
-                        <span>{sightingsCount}</span>
+                        <span>{sightingsCount} avist.</span>
                       </span>
                     )}
                     <span className="bg-[#002217]/90 text-[#6cf8bb] font-mono text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">

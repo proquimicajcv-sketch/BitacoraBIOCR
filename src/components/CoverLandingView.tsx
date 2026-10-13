@@ -13,6 +13,8 @@ interface CoverLandingViewProps {
   deviceId?: string;
   observerName?: string;
   specimensCount: number;
+  totalSightingsCount?: number;
+  totalIndividualsCount?: number;
   currentSpecimen: SpecimenRecord;
 }
 
@@ -27,6 +29,8 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
   deviceId,
   observerName,
   specimensCount,
+  totalSightingsCount = 0,
+  totalIndividualsCount = 0,
   currentSpecimen,
 }) => {
   const coverImageUrl =
@@ -81,6 +85,15 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
 
           <ThemeSwitcher compact />
 
+          {/* Badge en vivo de Avistamientos Totales */}
+          <div
+            className="px-3 py-1.5 rounded-full bg-[#006c49]/80 backdrop-blur-md border border-[#6cf8bb]/50 text-white text-xs font-mono font-bold flex items-center gap-1.5 shadow-sm"
+            title="Total acumulado de avistamientos en campo sincronizados"
+          >
+            <span className="material-symbols-outlined text-[15px] text-[#6cf8bb]">visibility</span>
+            <span>{totalSightingsCount} Avistamientos</span>
+          </div>
+
           <button
             onClick={onOpenDeviceProfile}
             className="px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md border border-[#6cf8bb]/50 text-[#6cf8bb] text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
@@ -103,7 +116,7 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
       </header>
 
       {/* Central Hero Body */}
-      <div className="relative z-10 px-5 py-5 max-w-4xl mx-auto w-full flex flex-col gap-5 my-auto">
+      <div className="relative z-10 px-5 py-5 max-w-4xl mx-auto w-full flex flex-col gap-4 my-auto">
         {/* Main Title & Scientific Identity */}
         <div className="flex flex-col gap-2.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -123,7 +136,7 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
               >
                 <span className="material-symbols-outlined text-[14px]">smartphone</span>
                 <span>Bitácora Local: <strong>{deviceId || 'DEV-ACTIVO'}</strong></span>
-                <span className="text-[10px] text-white/70 hidden sm:inline">• Datos aislados</span>
+                <span className="text-[10px] text-white/70 hidden sm:inline">• Sincronizado</span>
               </button>
             )}
           </div>
@@ -138,6 +151,28 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
           </p>
         </div>
 
+        {/* Panel Resumen de Conteos Globales en Tiempo Real */}
+        <div className="grid grid-cols-3 gap-2 p-3 rounded-2xl bg-black/45 backdrop-blur-md border border-[#6cf8bb]/30 shadow-xl text-center">
+          <div className="flex flex-col items-center justify-center py-1">
+            <span className="text-[10px] uppercase font-mono text-[#a5d0bc] font-bold">Especies</span>
+            <span className="text-2xl sm:text-3xl font-black text-white leading-tight">{specimensCount}</span>
+            <span className="text-[9px] text-[#a5d0bc]/80 font-mono">en catálogo</span>
+          </div>
+          <div className="flex flex-col items-center justify-center py-1 border-x border-white/15">
+            <span className="text-[10px] uppercase font-mono text-[#6cf8bb] font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#6cf8bb] animate-pulse" />
+              Avistamientos
+            </span>
+            <span className="text-2xl sm:text-3xl font-black text-[#6cf8bb] leading-tight">{totalSightingsCount}</span>
+            <span className="text-[9px] text-[#6cf8bb]/80 font-mono">entradas de campo</span>
+          </div>
+          <div className="flex flex-col items-center justify-center py-1">
+            <span className="text-[10px] uppercase font-mono text-[#a5d0bc] font-bold">Individuos</span>
+            <span className="text-2xl sm:text-3xl font-black text-white leading-tight">{totalIndividualsCount}</span>
+            <span className="text-[9px] text-[#a5d0bc]/80 font-mono">contabilizados</span>
+          </div>
+        </div>
+
         {/* Featured Specimen Badge Card */}
         <div className="p-4 rounded-2xl bg-black/40 backdrop-blur-md border border-white/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl">
           <div className="flex items-center gap-3 min-w-0">
@@ -149,8 +184,10 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
               />
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-mono text-[#6cf8bb] font-bold">
-                {currentSpecimen.catalogNumber}
+              <span className="text-[10px] font-mono text-[#6cf8bb] font-bold flex items-center gap-1.5">
+                <span>{currentSpecimen.catalogNumber}</span>
+                <span className="text-white/60">•</span>
+                <span className="text-[#a5d0bc]">{currentSpecimen.sightings?.length || 0} avistamientos</span>
               </span>
               <h2 className="text-base font-bold italic text-white truncate">
                 {currentSpecimen.scientificName}
@@ -216,7 +253,7 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
             </div>
           </button>
 
-          {/* Card 3: Colección & Catálogo */}
+          {/* Card 3: Colección & Catálogo con conteo total de avistamientos */}
           <button
             onClick={onOpenCatalog}
             className="p-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/20 backdrop-blur-md flex flex-col gap-2 text-left transition-all hover:scale-[1.02] shadow-lg group cursor-pointer"
@@ -226,7 +263,7 @@ export const CoverLandingView: React.FC<CoverLandingViewProps> = ({
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-xs sm:text-sm text-white flex items-center gap-1">
-                Colección ({specimensCount})
+                Colección ({specimensCount} esp. • {totalSightingsCount} avist.)
                 <span className="material-symbols-outlined text-[15px] text-white group-hover:translate-x-1 transition-transform">
                   arrow_forward
                 </span>

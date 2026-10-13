@@ -717,6 +717,12 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 <span className="material-symbols-outlined text-[14px] text-[#006c49]">cloud_done</span>
                 Darwin Core Sync
               </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#002217] text-[#6cf8bb] font-mono text-[11px] font-bold shadow-xs">
+                <span className="material-symbols-outlined text-[13px]">visibility</span>
+                <span>{specimen.sightings?.length || 0} Avistamientos</span>
+                <span className="text-white/60">•</span>
+                <span>{specimen.sightings?.reduce((acc, s) => acc + (s.count || s.individualsCount || 1), 0) || 1} Inds.</span>
+              </span>
             </div>
             <h2 className="text-[26px] font-bold italic text-[#002217] tracking-tight mt-1">
               {specimen.scientificName}
@@ -1406,7 +1412,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="font-bold text-[16px] text-[#002217] flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[#006c49] text-[20px]">visibility</span>
-                Historial de Avistamientos &amp; Entradas ({specimen.sightings?.length || 1})
+                Historial de Avistamientos &amp; Entradas ({specimen.sightings?.length || 0} en total • {specimen.sightings?.reduce((acc, s) => acc + (s.count || s.individualsCount || 1), 0) || 1} individuos observados)
               </h3>
               <button
                 onClick={handleOpenAddSighting}

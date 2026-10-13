@@ -98,6 +98,72 @@ app.get('/api/database/specimens', (req: Request, res: Response): void => {
   }
 });
 
+function mergeSpecimens(existingList: any[], incomingList: any[]): any[] {
+  if (!Array.isArray(existingList) || existingList.length === 0) return incomingList;
+  if (!Array.isArray(incomingList) || incomingList.length === 0) return existingList;
+
+  const result: any[] = [...existingList];
+
+  for (const incoming of incomingList) {
+    const idx = result.findIndex(
+      (e) => (incoming.id && e.id === incoming.id) ||
+             (incoming.scientificName && e.scientificName === incoming.scientificName)
+    );
+
+    if (idx === -1) {
+      result.push(incoming);
+    } else {
+      const existing = result[idx];
+
+      // Merge sightings: UNION by id, NEVER LOSE A SIGHTING!
+      const existingSightings = Array.isArray(existing.sightings) ? existing.sightings : [];
+      const incomingSightings = Array.isArray(incoming.sightings) ? incoming.sightings : [];
+
+      const sightingMap = new Map<string, any>();
+      for (const s of existingSightings) {
+        if (s && s.id) sightingMap.set(s.id, s);
+      }
+      for (const s of incomingSightings) {
+        if (s && s.id) {
+          const old = sightingMap.get(s.id);
+          sightingMap.set(s.id, old ? { ...old, ...s } : s);
+        }
+      }
+
+      const mergedSightings = Array.from(sightingMap.values()).sort((a, b) => {
+        const dateA = a.date || a.timestamp || '';
+        const dateB = b.date || b.timestamp || '';
+        return dateB.localeCompare(dateA);
+      });
+
+      // Merge additional photos: UNION by id/label
+      const existingPhotos = Array.isArray(existing.additionalPhotos) ? existing.additionalPhotos : [];
+      const incomingPhotos = Array.isArray(incoming.additionalPhotos) ? incoming.additionalPhotos : [];
+      const photoMap = new Map<string, any>();
+      for (const p of existingPhotos) {
+        if (p && (p.id || p.label)) photoMap.set(p.id || p.label, p);
+      }
+      for (const p of incomingPhotos) {
+        if (p && (p.id || p.label)) {
+          const key = p.id || p.label;
+          const old = photoMap.get(key);
+          photoMap.set(key, old ? { ...old, ...p } : p);
+        }
+      }
+      const mergedPhotos = Array.from(photoMap.values());
+
+      result[idx] = {
+        ...existing,
+        ...incoming,
+        sightings: mergedSightings,
+        additionalPhotos: mergedPhotos,
+      };
+    }
+  }
+
+  return result;
+}
+
 app.post('/api/database/specimens', (req: Request, res: Response): void => {
   try {
     const { specimens, lastModified, deviceId } = req.body;
@@ -108,23 +174,38 @@ app.post('/api/database/specimens', (req: Request, res: Response): void => {
     const updatedTime = Number(lastModified) || Date.now();
     serverDbLastModified = updatedTime;
 
-    // CRITICAL: Always write to central shared DB_FILE so all devices stay updated
-    fs.writeFileSync(DB_FILE, JSON.stringify(specimens, null, 2), 'utf-8');
+    // Smart-merge with existing DB so sightings from ANY device are never lost
+    let finalSpecimens = specimens;
+    if (fs.existsSync(DB_FILE)) {
+      try {
+        const content = fs.readFileSync(DB_FILE, 'utf-8');
+        const currentData = JSON.parse(content);
+        if (Array.isArray(currentData) && currentData.length > 0) {
+          finalSpecimens = mergeSpecimens(currentData, specimens);
+        }
+      } catch (err) {
+        console.warn('Error reading DB_FILE for merge:', err);
+      }
+    }
+
+    // CRITICAL: Always write merged database to DB_FILE so all devices stay updated
+    fs.writeFileSync(DB_FILE, JSON.stringify(finalSpecimens, null, 2), 'utf-8');
 
     // Also write device backup if specified
     if (deviceId) {
       const targetFile = getTargetDbFile(deviceId);
       try {
-        fs.writeFileSync(targetFile, JSON.stringify(specimens, null, 2), 'utf-8');
+        fs.writeFileSync(targetFile, JSON.stringify(finalSpecimens, null, 2), 'utf-8');
       } catch {}
     }
 
     res.json({
       success: true,
-      count: specimens.length,
+      data: finalSpecimens,
+      count: finalSpecimens.length,
       deviceId: deviceId || 'global',
       lastModified: updatedTime,
-      message: 'Base de datos sincronizada exitosamente en el servidor para todos los dispositivos',
+      message: 'Base de datos y avistamientos sincronizados permanentemente para todos los dispositivos',
     });
   } catch (err: any) {
     console.error('Error writing database file:', err);
@@ -166,14 +247,26 @@ app.post('/api/database/import-json', (req: Request, res: Response): void => {
       return;
     }
 
-    fs.writeFileSync(DB_FILE, JSON.stringify(recordsToImport, null, 2), 'utf-8');
+    let finalImport = recordsToImport;
+    if (fs.existsSync(DB_FILE)) {
+      try {
+        const content = fs.readFileSync(DB_FILE, 'utf-8');
+        const currentData = JSON.parse(content);
+        if (Array.isArray(currentData) && currentData.length > 0) {
+          finalImport = mergeSpecimens(currentData, recordsToImport);
+        }
+      } catch {}
+    }
+
+    fs.writeFileSync(DB_FILE, JSON.stringify(finalImport, null, 2), 'utf-8');
     serverDbLastModified = Date.now();
 
     res.json({
       success: true,
-      count: recordsToImport.length,
+      data: finalImport,
+      count: finalImport.length,
       lastModified: serverDbLastModified,
-      message: `¡Archivo JSON importado y sincronizado! ${recordsToImport.length} registros actualizados en todos los dispositivos.`,
+      message: `¡Archivo JSON importado y sincronizado! ${finalImport.length} registros y todos los avistamientos actualizados en todos los dispositivos.`,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
