@@ -119,14 +119,31 @@ function mergeSpecimens(existingList: any[], incomingList: any[]): any[] {
       const existingSightings = Array.isArray(existing.sightings) ? existing.sightings : [];
       const incomingSightings = Array.isArray(incoming.sightings) ? incoming.sightings : [];
 
+      const getSightingKey = (s: any) => {
+        if (s && s.id) return String(s.id);
+        const loc = s?.locality || '';
+        const dt = s?.date || s?.timestamp || '';
+        const cnt = s?.individualsCount ?? s?.count ?? '';
+        return `sight_${dt}_${loc}_${cnt}`;
+      };
+
       const sightingMap = new Map<string, any>();
       for (const s of existingSightings) {
-        if (s && s.id) sightingMap.set(s.id, s);
+        if (s) {
+          const key = getSightingKey(s);
+          const c = Number(s.individualsCount ?? s.count) || 1;
+          sightingMap.set(key, { ...s, id: s.id || key, count: c, individualsCount: c });
+        }
       }
       for (const s of incomingSightings) {
-        if (s && s.id) {
-          const old = sightingMap.get(s.id);
-          sightingMap.set(s.id, old ? { ...old, ...s } : s);
+        if (s) {
+          const key = getSightingKey(s);
+          const old = sightingMap.get(key);
+          const c = Number(s.individualsCount ?? s.count ?? old?.individualsCount ?? old?.count) || 1;
+          const mergedItem = old
+            ? { ...old, ...s, id: s.id || old.id || key, count: c, individualsCount: c }
+            : { ...s, id: s.id || key, count: c, individualsCount: c };
+          sightingMap.set(key, mergedItem);
         }
       }
 

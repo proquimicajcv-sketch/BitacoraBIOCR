@@ -130,6 +130,24 @@
         "curiousFindingPhoto": "/hallazgo_macho_un_ojo.jpg"
       },
       {
+        "id": "sight-cascadas-vinotinto-20260828",
+        "timestamp": "28 Ago 2026, 19:40 CST",
+        "date": "2026-08-28",
+        "observer": "Ing. Carvajal V.",
+        "locality": "Cascadas vino tinto, Zona de los Santos",
+        "coordinates": "9°39'25.0\" N, 84°00'50.0\" W",
+        "count": 34,
+        "individualsCount": 34,
+        "microhabitat": "Vegetación riparia húmeda y rocas musgosas adyacentes a las cascadas vino tinto con spray constante.",
+        "weather": "Noche húmeda de montaña en zona de cascada, 17.2°C, HR 98%",
+        "temperatureC": 17.2,
+        "behaviorObserved": "Observación de 34 individuos activos cantando fuertemente en el curso y spray de las cascadas vino tinto.",
+        "notes": "Población excepcionalmente numerosa y activa registrada en Cascadas vino tinto. Registro científico de alta concentración de individuos en microhábitat de cascada.",
+        "vitalityStatus": "VIVO",
+        "lifeStage": "ADULTO",
+        "sex": "NO_APLICA"
+      },
+      {
         "id": "sight-2",
         "timestamp": "16 Feb 2026, 06:15 CST",
         "date": "2026-02-16",
