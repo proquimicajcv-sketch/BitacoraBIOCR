@@ -22,6 +22,102 @@ import {
   estimateHoldridgeZone,
 } from '../data/costaRicaData';
 
+// Helper utilities for sighting date and time handling
+function parseDateToYmd(dateStr?: string, timestampStr?: string): string {
+  if (!dateStr && !timestampStr) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  // Check if dateStr is YYYY-MM-DD
+  if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
+    return dateStr.trim();
+  }
+  // Search for YYYY-MM-DD anywhere in dateStr or timestampStr
+  const isoMatch =
+    (dateStr || '').match(/\b(\d{4}-\d{2}-\d{2})\b/) ||
+    (timestampStr || '').match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (isoMatch) return isoMatch[1];
+
+  // Search for DD/MM/YYYY or DD-MM-YYYY
+  const combo = `${dateStr || ''} ${timestampStr || ''}`;
+  const slashMatch = combo.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
+  if (slashMatch) {
+    const day = slashMatch[1].padStart(2, '0');
+    const month = slashMatch[2].padStart(2, '0');
+    const year = slashMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // Search for Spanish text date: "09 Oct 2026", "16 Feb 2026", "15 Febrero 2026"
+  const textMatch =
+    combo.match(/(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚ]+)\s+de\s+(\d{4})/i) ||
+    combo.match(/(\d{1,2})\s+([a-zA-ZáéíóúÁÉÍÓÚ]+)\s+(\d{4})/i);
+  if (textMatch) {
+    const day = textMatch[1].padStart(2, '0');
+    const mStr = textMatch[2].toLowerCase();
+    const year = textMatch[3];
+    const monthMap: Record<string, string> = {
+      ene: '01', enero: '01',
+      feb: '02', febrero: '02',
+      mar: '03', marzo: '03',
+      abr: '04', abril: '04',
+      may: '05', mayo: '05',
+      jun: '06', junio: '06',
+      jul: '07', julio: '07',
+      ago: '08', agosto: '08',
+      sep: '09', set: '09', septiembre: '09',
+      oct: '10', octubre: '10',
+      nov: '11', noviembre: '11',
+      dic: '12', diciembre: '12',
+    };
+    for (const [prefix, num] of Object.entries(monthMap)) {
+      if (mStr.startsWith(prefix)) {
+        return `${year}-${num}-${day}`;
+      }
+    }
+  }
+
+  // Check for month-year pattern: e.g. "2026-03"
+  if (dateStr && /^\d{4}-\d{2}$/.test(dateStr.trim())) {
+    return `${dateStr.trim()}-01`;
+  }
+
+  return new Date().toISOString().slice(0, 10);
+}
+
+function parseTimeToHm(timestampStr?: string): string {
+  if (!timestampStr) {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  const match = timestampStr.match(/\b([0-9]{1,2}):([0-9]{2})\b/);
+  if (match) {
+    return `${match[1].padStart(2, '0')}:${match[2]}`;
+  }
+  return '20:00';
+}
+
+function formatSightingTimestamp(dateYmd: string, timeHm?: string): string {
+  if (!dateYmd) return timeHm ? `${timeHm} CST` : '';
+  const [year, month, day] = dateYmd.split('-');
+  const monthNames = [
+    'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
+  ];
+  const mIdx = parseInt(month, 10) - 1;
+  const mName = monthNames[mIdx] || month;
+
+  try {
+    const dObj = new Date(`${dateYmd}T12:00:00`);
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const dName = dayNames[dObj.getDay()];
+    const timePart = timeHm ? `, ${timeHm} CST` : '';
+    return `${day} ${mName} ${year}${timePart} (${dName})`;
+  } catch {
+    const timePart = timeHm ? `, ${timeHm} CST` : '';
+    return `${day} ${mName} ${year}${timePart}`;
+  }
+}
+
 interface SpecimenDetailViewProps {
   specimen: SpecimenRecord;
   onBack: () => void;
@@ -194,10 +290,22 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     setEditingSightingId(sight.id);
     setSightingObserver(sight.observer || currentObserverName || 'Ing. Jorge Carvajal V.');
     setSightingLocality(sight.locality || specimen.georeference.locality || '');
-    setSightingDate(sight.date || new Date().toISOString().slice(0, 10));
-    setSightingPrecision('exact');
-    setSightingTime(sight.timestamp?.match(/([0-9]{2}:[0-9]{2})/)?.[1] || '20:00');
-    setSightingCoordsDms(sight.coordinates || `${specimen.georeference.latitudeDMS}, ${specimen.georeference.longitudeDMS}`);
+
+    const parsedDate = parseDateToYmd(sight.date, sight.timestamp);
+    const parsedTime = parseTimeToHm(sight.timestamp);
+    setSightingDate(parsedDate);
+    setSightingTime(parsedTime);
+
+    const isMonthYear =
+      (sight.date && /^\d{4}-\d{2}$/.test(sight.date)) ||
+      (sight.timestamp && sight.timestamp.includes('(Aproximado)'));
+    setSightingPrecision(isMonthYear ? 'month_year' : 'exact');
+    setSightingMonthYear(isMonthYear && sight.date ? sight.date : parsedDate.slice(0, 7));
+
+    setSightingCoordsDms(
+      sight.coordinates ||
+        `${specimen.georeference.latitudeDMS}, ${specimen.georeference.longitudeDMS}`
+    );
     setSightingCount(sight.count || sight.individualsCount || 1);
     setSightingWeather(sight.weather || sight.weatherConditions || '');
     setSightingMicrohabitat(sight.microhabitat || '');
@@ -222,8 +330,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
 
     if (sightingPrecision === 'exact') {
       recordDate = sightingDate;
-      const timePart = sightingTime ? ` ${sightingTime} CST` : '';
-      formattedTimestamp = `${sightingDate}${timePart}`;
+      formattedTimestamp = formatSightingTimestamp(sightingDate, sightingTime);
     } else {
       // Mes y Año aproximado (ej: 2026-03 -> Marzo 2026)
       recordDate = sightingMonthYear;
@@ -274,10 +381,10 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     }
 
     // Keep all sightings strictly sorted in chronological order of visit (descending)
-    const combinedSightings = updatedList.sort((a, b) => {
-      const dateA = a.date || a.timestamp || '';
-      const dateB = b.date || b.timestamp || '';
-      return dateB.localeCompare(dateA);
+    const combinedSightings = [...updatedList].sort((a, b) => {
+      const keyA = `${parseDateToYmd(a.date, a.timestamp)} ${parseTimeToHm(a.timestamp)}`;
+      const keyB = `${parseDateToYmd(b.date, b.timestamp)} ${parseTimeToHm(b.timestamp)}`;
+      return keyB.localeCompare(keyA);
     });
 
     // Also update additionalPhotos if a curious photo was uploaded/updated
@@ -1125,42 +1232,51 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               {specimen.sightings && specimen.sightings.length > 0 ? (
                 [...specimen.sightings]
                   .sort((a, b) => {
-                    const dateA = a.date || a.timestamp || '';
-                    const dateB = b.date || b.timestamp || '';
-                    return dateB.localeCompare(dateA);
+                    const keyA = `${parseDateToYmd(a.date, a.timestamp)} ${parseTimeToHm(a.timestamp)}`;
+                    const keyB = `${parseDateToYmd(b.date, b.timestamp)} ${parseTimeToHm(b.timestamp)}`;
+                    return keyB.localeCompare(keyA);
                   })
                   .map((sight) => (
                   <div
                     key={sight.id}
-                    className={`p-3 rounded-lg border flex flex-col gap-1.5 text-xs transition-colors ${
+                    className={`p-3 rounded-xl border flex flex-col gap-1.5 text-xs transition-colors ${
                       sight.isCuriousFinding || sight.curiousFindingTitle
-                        ? 'bg-[#fffdf5] border-[#f59e0b] shadow-sm'
+                        ? 'bg-[#fffdf5] border-[#f59e0b] shadow-xs'
                         : 'bg-[#f2f4ee] border-[#e1e3dd] hover:border-[#006c49]/40'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-[#002217] flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px] text-[#006c49]">pin_drop</span>
+                          <span className="material-symbols-outlined text-[15px] text-[#006c49]">pin_drop</span>
                           {sight.locality}
                         </span>
                         {(sight.isCuriousFinding || sight.curiousFindingTitle) && (
-                          <span className="px-1.5 py-0.5 rounded bg-[#f59e0b] text-white text-[9px] font-bold font-mono uppercase flex items-center gap-0.5 shadow-xs">
+                          <span className="px-1.5 py-0.5 rounded bg-[#f59e0b] text-white text-[9px] font-bold font-mono uppercase flex items-center gap-0.5 shadow-2xs">
                             <span className="material-symbols-outlined text-[11px]">psychology_alt</span>
                             Hallazgo Curioso
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[10px] text-[#006c49] font-bold bg-white px-2 py-0.5 rounded border border-[#e1e3dd]">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono text-[10px] text-[#006c49] font-bold bg-white px-2 py-1 rounded-lg border border-[#e1e3dd]">
                           N={sight.count || sight.individualsCount || 1} ind. • {sight.timestamp}
                         </span>
                         <button
+                          type="button"
+                          onClick={() => handleOpenEditSighting(sight)}
+                          className="w-7 h-7 rounded-lg bg-white border border-[#c1c8c3] text-[#006c49] hover:bg-[#006c49] hover:text-white flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
+                          title="Editar día, hora y datos de este avistamiento"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">edit</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleDeleteSighting(sight.id)}
-                          className="text-[#717974] hover:text-red-600 p-0.5 rounded transition-colors cursor-pointer"
+                          className="w-7 h-7 rounded-lg bg-white border border-[#c1c8c3] text-[#717974] hover:bg-red-600 hover:text-white flex items-center justify-center transition-colors cursor-pointer shadow-2xs"
                           title="Eliminar este avistamiento"
                         >
-                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                          <span className="material-symbols-outlined text-[15px]">delete</span>
                         </button>
                       </div>
                     </div>
@@ -1307,27 +1423,158 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
             <div className="flex items-center justify-between border-b border-[#e1e3dd] pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-[#002217] text-[#6cf8bb] flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[18px]">add_location_alt</span>
+                  <span className="material-symbols-outlined text-[18px]">
+                    {editingSightingId ? 'edit_calendar' : 'add_location_alt'}
+                  </span>
                 </div>
                 <div>
                   <h4 className="font-bold text-sm text-[#002217]">
-                    Nuevo Avistamiento en Campo
+                    {editingSightingId ? 'Editar Avistamiento Registrado' : 'Nuevo Avistamiento en Campo'}
                   </h4>
                   <span className="text-[11px] text-[#717974] italic">
-                    {specimen.scientificName}
+                    {specimen.scientificName} • Permite registrar y editar hora y día
                   </span>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsAddSightingModalOpen(false)}
-                className="w-8 h-8 rounded-full text-[#717974] hover:bg-[#f0f2ec] flex items-center justify-center"
+                onClick={() => {
+                  setIsAddSightingModalOpen(false);
+                  setEditingSightingId(null);
+                }}
+                className="w-8 h-8 rounded-full text-[#717974] hover:bg-[#f0f2ec] flex items-center justify-center cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
 
             <form onSubmit={handleSaveDirectSighting} className="flex flex-col gap-3">
+              {/* Fecha y Hora del Avistamiento (Día y Hora editables para avistamientos anteriores) */}
+              <div className="p-3 rounded-xl bg-[#f0f5ee] border border-[#c1d0c4] flex flex-col gap-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <label className="text-[11px] font-bold text-[#002217] uppercase flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-[#006c49]">calendar_clock</span>
+                    <span>Fecha y Hora del Avistamiento *</span>
+                  </label>
+                  <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-[#c1c8c3] text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setSightingPrecision('exact')}
+                      className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                        sightingPrecision === 'exact'
+                          ? 'bg-[#006c49] text-white font-bold shadow-2xs'
+                          : 'text-[#414844] hover:text-black'
+                      }`}
+                    >
+                      Día y Hora Exactos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSightingPrecision('month_year')}
+                      className={`px-2 py-0.5 rounded font-medium transition-colors cursor-pointer ${
+                        sightingPrecision === 'month_year'
+                          ? 'bg-[#006c49] text-white font-bold shadow-2xs'
+                          : 'text-[#414844] hover:text-black'
+                      }`}
+                      title="Para avistamientos históricos sin hora fija"
+                    >
+                      Mes / Año Aprox.
+                    </button>
+                  </div>
+                </div>
+
+                {sightingPrecision === 'exact' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#414844] uppercase mb-1">
+                        Día / Fecha del Avistamiento *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={sightingDate}
+                        onChange={(e) => setSightingDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] bg-white text-xs font-mono font-bold text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#414844] uppercase mb-1">
+                        Hora (Formato 24h CST) *
+                      </label>
+                      <input
+                        type="time"
+                        required
+                        value={sightingTime}
+                        onChange={(e) => setSightingTime(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] bg-white text-xs font-mono font-bold text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#414844] uppercase mb-1">
+                      Mes y Año del Avistamiento Anterior *
+                    </label>
+                    <input
+                      type="month"
+                      required
+                      value={sightingMonthYear}
+                      onChange={(e) => setSightingMonthYear(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] bg-white text-xs font-mono font-bold text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                    />
+                  </div>
+                )}
+
+                {/* Atajos para ingresar avistamientos pasados o actuales con un clic */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  <span className="text-[10px] text-[#717974] font-medium">Atajos rápidos:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const now = new Date();
+                      setSightingDate(now.toISOString().slice(0, 10));
+                      setSightingTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+                      setSightingPrecision('exact');
+                    }}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-[#c1c8c3] text-[#006c49] font-semibold hover:bg-[#e6f4ea] cursor-pointer shadow-2xs"
+                  >
+                    Hoy (Ahora)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const yesterday = new Date(Date.now() - 86400000);
+                      setSightingDate(yesterday.toISOString().slice(0, 10));
+                      setSightingPrecision('exact');
+                    }}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-[#c1c8c3] text-[#414844] hover:bg-[#f2f4ee] cursor-pointer shadow-2xs"
+                  >
+                    Ayer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSightingDate('2026-10-09');
+                      setSightingTime('20:15');
+                      setSightingPrecision('exact');
+                    }}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-[#c1c8c3] text-[#414844] hover:bg-[#f2f4ee] cursor-pointer shadow-2xs"
+                  >
+                    09 Oct 2026 (Dota)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSightingDate('2026-02-16');
+                      setSightingTime('06:15');
+                      setSightingPrecision('exact');
+                    }}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-[#c1c8c3] text-[#414844] hover:bg-[#f2f4ee] cursor-pointer shadow-2xs"
+                  >
+                    16 Feb 2026 (Tarrazú)
+                  </button>
+                </div>
+              </div>
               {/* Observador */}
               <div>
                 <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
@@ -1632,8 +1879,10 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                   type="submit"
                   className="py-2.5 px-3 rounded-xl bg-[#002217] hover:bg-[#003d2b] text-[#6cf8bb] text-xs font-bold flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px]">save</span>
-                  <span>Guardar Avistamiento</span>
+                  <span className="material-symbols-outlined text-[16px]">
+                    {editingSightingId ? 'check_circle' : 'save'}
+                  </span>
+                  <span>{editingSightingId ? 'Actualizar Avistamiento' : 'Guardar Avistamiento'}</span>
                 </button>
               </div>
             </form>

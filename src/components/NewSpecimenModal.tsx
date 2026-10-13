@@ -209,9 +209,23 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
   );
   const [newSightingLocality, setNewSightingLocality] = useState('');
   const [newSightingCount, setNewSightingCount] = useState(1);
+  const [newSightingDate, setNewSightingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newSightingTime, setNewSightingTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
   const [newSightingBehavior, setNewSightingBehavior] = useState('');
   const [newSightingNotes, setNewSightingNotes] = useState('');
   const [showAddSighting, setShowAddSighting] = useState(false);
+  const [editingSightingId, setEditingSightingId] = useState<string | null>(null);
+
+  const [collectionDate, setCollectionDate] = useState<string>(
+    editingSpecimen?.collectionDate || new Date().toISOString().slice(0, 10)
+  );
+  const [collectionTime, setCollectionTime] = useState<string>(
+    editingSpecimen?.collectionTime ||
+      `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')} CST`
+  );
 
   // Delete confirmation modal state
   const [showDeletePrompt, setShowDeletePrompt] = useState(false);
@@ -235,6 +249,11 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
         setGenus(editingSpecimen.taxonomy.genus);
         setFamily(editingSpecimen.taxonomy.family);
         setCollector(editingSpecimen.collector);
+        setCollectionDate(editingSpecimen.collectionDate || new Date().toISOString().slice(0, 10));
+        setCollectionTime(
+          editingSpecimen.collectionTime ||
+            `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')} CST`
+        );
         setHeroImage(editingSpecimen.heroImage);
         setUploadedBase64(null);
         setLhcMm(editingSpecimen.morphometrics.snoutVentLengthMm || 50.0);
@@ -252,6 +271,7 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
         setAdditionalPhotosList(editingSpecimen.additionalPhotos || []);
         setSightingsList(editingSpecimen.sightings || []);
         setShowAddSighting(false);
+        setEditingSightingId(null);
       } else if (initialCoords) {
         setCoords({ lat: initialCoords.lat, lng: initialCoords.lng });
         if (initialCoords.locality) setLocality(initialCoords.locality);
@@ -597,10 +617,14 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
   };
 
   const handleAddSighting = () => {
-    const newSighting: SightingEntry = {
-      id: `sight-${Date.now()}`,
-      timestamp: new Date().toLocaleString('es-CR'),
-      date: new Date().toISOString().slice(0, 10),
+    const dateFormatted = newSightingDate || new Date().toISOString().slice(0, 10);
+    const timeFormatted = newSightingTime ? `${newSightingTime} CST` : '';
+    const timestampFormatted = `${dateFormatted}${timeFormatted ? ` • ${timeFormatted}` : ''}`;
+
+    const sightingPayload: SightingEntry = {
+      id: editingSightingId || `sight-${Date.now()}`,
+      timestamp: timestampFormatted,
+      date: dateFormatted,
       observer: collector || 'Investigador de Campo',
       locality: newSightingLocality.trim() || locality,
       count: newSightingCount > 0 ? newSightingCount : 1,
@@ -608,10 +632,20 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
       microhabitat: microhabitat,
       notes: newSightingNotes.trim() || undefined,
     };
-    setSightingsList([newSighting, ...sightingsList]);
+
+    let updated: SightingEntry[] = [];
+    if (editingSightingId) {
+      updated = sightingsList.map((s) => (s.id === editingSightingId ? sightingPayload : s));
+    } else {
+      updated = [sightingPayload, ...sightingsList];
+    }
+    updated.sort((a, b) => (b.date || b.timestamp || '').localeCompare(a.date || a.timestamp || ''));
+
+    setSightingsList(updated);
     setNewSightingLocality('');
     setNewSightingBehavior('');
     setNewSightingNotes('');
+    setEditingSightingId(null);
     setShowAddSighting(false);
   };
 
@@ -643,6 +677,7 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
       realm: 'Neotropical',
       collector,
       collectionDate:
+        collectionDate.trim() ||
         editingSpecimen?.collectionDate ||
         new Date().toLocaleDateString('es-CR', {
           day: 'numeric',
@@ -650,6 +685,7 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
           year: 'numeric',
         }),
       collectionTime:
+        collectionTime.trim() ||
         editingSpecimen?.collectionTime ||
         `${new Date().getHours()}:${String(new Date().getMinutes()).padStart(2, '0')} CST`,
       institutionCode: 'UCR-MZ',
@@ -1132,6 +1168,49 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
             </div>
           </div>
 
+          {/* Temporalidad y Colector del Espécimen (Fecha y Hora de Colecta/Avistamiento) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-xl bg-[#f0f4ee] border border-[#d1dcd4]">
+            <div>
+              <label className="block text-xs font-bold text-[#002217] mb-1 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[15px] text-[#006c49]">calendar_today</span>
+                Fecha de Colecta *
+              </label>
+              <input
+                type="text"
+                value={collectionDate}
+                onChange={(e) => setCollectionDate(e.target.value)}
+                placeholder="ej. 2026-10-09 o 15 Febrero 2026"
+                className="w-full px-3 py-2 rounded-lg bg-white border border-[#c1c8c3] text-xs font-medium text-[#191c19] focus:ring-2 focus:ring-[#006c49]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#002217] mb-1 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[15px] text-[#006c49]">schedule</span>
+                Hora de Colecta
+              </label>
+              <input
+                type="text"
+                value={collectionTime}
+                onChange={(e) => setCollectionTime(e.target.value)}
+                placeholder="ej. 20:15 CST o 06:15 CST"
+                className="w-full px-3 py-2 rounded-lg bg-white border border-[#c1c8c3] text-xs font-medium text-[#191c19] focus:ring-2 focus:ring-[#006c49]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-[#002217] mb-1 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[15px] text-[#006c49]">person</span>
+                Colector / Observador
+              </label>
+              <input
+                type="text"
+                value={collector}
+                onChange={(e) => setCollector(e.target.value)}
+                placeholder="Nombre del investigador..."
+                className="w-full px-3 py-2 rounded-lg bg-white border border-[#c1c8c3] text-xs font-medium text-[#191c19] focus:ring-2 focus:ring-[#006c49]"
+              />
+            </div>
+          </div>
+
           {/* BOTÓN DEDICADO: ENRIQUECER INFORMACIÓN CIENTÍFICA CON IA */}
           <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#002217] via-[#0b3323] to-[#006c49] text-white flex flex-col gap-2.5 shadow-md border border-[#6cf8bb]/20">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1434,14 +1513,46 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
 
             {/* Sightings List */}
             {sightingsList.length > 0 && (
-              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto">
                 {sightingsList.map((sight) => (
                   <div key={sight.id} className="p-2.5 rounded-lg bg-[#f8faf4] border border-[#c1c8c3]/60 flex flex-col gap-1 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#002217]">{sight.locality}</span>
-                      <span className="font-mono text-[10px] text-[#006c49] font-bold">
-                        N={sight.count} ind. • {sight.timestamp}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-[#002217] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] text-[#006c49]">pin_drop</span>
+                        {sight.locality}
                       </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono text-[10px] text-[#006c49] font-bold bg-white px-2 py-0.5 rounded border border-[#e1e3dd]">
+                          N={sight.count || 1} ind. • {sight.timestamp}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSightingId(sight.id);
+                            setNewSightingLocality(sight.locality);
+                            setNewSightingCount(sight.count || 1);
+                            setNewSightingDate(sight.date || new Date().toISOString().slice(0, 10));
+                            setNewSightingTime(
+                              sight.timestamp?.match(/\b([0-9]{1,2}:[0-9]{2})\b/)?.[1] || '20:00'
+                            );
+                            setNewSightingBehavior(sight.behaviorObserved || '');
+                            setNewSightingNotes(sight.notes || '');
+                            setShowAddSighting(true);
+                          }}
+                          className="w-6 h-6 rounded bg-white border border-[#c1c8c3] text-[#006c49] hover:bg-[#006c49] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                          title="Editar día, hora y datos de este avistamiento"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSightingsList(sightingsList.filter((s) => s.id !== sight.id))}
+                          className="w-6 h-6 rounded bg-white border border-[#c1c8c3] text-[#717974] hover:bg-red-600 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                          title="Eliminar este avistamiento"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">delete</span>
+                        </button>
+                      </div>
                     </div>
                     <p className="text-[#414844]">{sight.behaviorObserved}</p>
                     {sight.notes && <p className="text-[11px] text-[#717974] italic">{sight.notes}</p>}
@@ -1450,10 +1561,83 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
               </div>
             )}
 
-            {/* Add Sighting Form */}
+            {/* Add / Edit Sighting Form */}
             {showAddSighting && (
-              <div className="p-3 rounded-lg bg-[#f2f4ee] border border-[#c1c8c3] flex flex-col gap-2 text-xs">
-                <span className="font-bold text-[#002217]">Registrar Nueva Observación en Sitio:</span>
+              <div className="p-3 rounded-lg bg-[#f0f4ee] border border-[#c1d0c4] flex flex-col gap-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[#002217] flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px] text-[#006c49]">
+                      {editingSightingId ? 'edit_calendar' : 'add_location_alt'}
+                    </span>
+                    {editingSightingId ? 'Editar Observación en Sitio:' : 'Registrar Nueva Observación en Sitio:'}
+                  </span>
+                  {editingSightingId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingSightingId(null);
+                        setNewSightingLocality('');
+                        setNewSightingBehavior('');
+                        setNewSightingNotes('');
+                        setShowAddSighting(false);
+                      }}
+                      className="text-[11px] text-[#717974] hover:text-red-600 cursor-pointer"
+                    >
+                      Cancelar Edición
+                    </button>
+                  )}
+                </div>
+
+                {/* Día y Hora para avistamientos anteriores o presentes */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-lg border border-[#c1c8c3]">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#414844] uppercase mb-0.5">
+                      Día / Fecha del Avistamiento *
+                    </label>
+                    <input
+                      type="date"
+                      value={newSightingDate}
+                      onChange={(e) => setNewSightingDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-[#f8faf4] border border-[#c1c8c3] text-xs font-mono font-bold text-[#191c19]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#414844] uppercase mb-0.5">
+                      Hora del Avistamiento (CST) *
+                    </label>
+                    <input
+                      type="time"
+                      value={newSightingTime}
+                      onChange={(e) => setNewSightingTime(e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded bg-[#f8faf4] border border-[#c1c8c3] text-xs font-mono font-bold text-[#191c19]"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 flex items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-[#717974]">Atajos:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const now = new Date();
+                        setNewSightingDate(now.toISOString().slice(0, 10));
+                        setNewSightingTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+                      }}
+                      className="text-[10px] px-2 py-0.5 rounded bg-[#e6f4ea] text-[#006c49] font-medium hover:bg-[#d2edd9]"
+                    >
+                      Hoy (Ahora)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const y = new Date(Date.now() - 86400000);
+                        setNewSightingDate(y.toISOString().slice(0, 10));
+                      }}
+                      className="text-[10px] px-2 py-0.5 rounded bg-[#e1e3dd] text-[#414844] hover:bg-[#d0d3cb]"
+                    >
+                      Ayer
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input
                     type="text"
@@ -1489,9 +1673,9 @@ export const NewSpecimenModal: React.FC<NewSpecimenModalProps> = ({
                   <button
                     type="button"
                     onClick={handleAddSighting}
-                    className="px-3.5 py-1.5 rounded bg-[#006c49] hover:bg-[#005236] text-white font-bold text-xs cursor-pointer whitespace-nowrap"
+                    className="px-3.5 py-1.5 rounded bg-[#006c49] hover:bg-[#005236] text-white font-bold text-xs cursor-pointer whitespace-nowrap shadow-xs"
                   >
-                    Guardar Entrada
+                    {editingSightingId ? 'Actualizar Entrada' : 'Guardar Entrada'}
                   </button>
                 </div>
               </div>
