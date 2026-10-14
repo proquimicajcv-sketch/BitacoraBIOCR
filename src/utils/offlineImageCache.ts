@@ -95,6 +95,206 @@ export async function cacheSingleImage(url: string): Promise<boolean> {
 }
 
 /**
+ * Guarda directamente datos en base64 o blob asociados a una URL en CacheStorage e IndexedDB
+ */
+export async function cacheSingleImageWithData(url: string, base64Data: string): Promise<boolean> {
+  if (!url || !base64Data) return false;
+  try {
+    const clean = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    const byteCharacters = atob(clean);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const mimeMatch = base64Data.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const blob = new Blob([byteArray], { type: mimeType });
+
+    // 1. Guardar en CacheStorage para el Service Worker
+    if ('caches' in window) {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const response = new Response(blob, {
+          headers: { 'Content-Type': mimeType, 'Content-Length': String(blob.size) },
+        });
+        await cache.put(url, response);
+      } catch (e) {
+        // Ignorar
+      }
+    }
+
+    // 2. Guardar en IndexedDB
+    const db = await openDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const item: CacheItem = {
+        url,
+        blob,
+        base64DataUrl: base64Data,
+        cachedAt: Date.now(),
+      };
+      store.put(item);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.warn('Error al cachear imagen con datos:', err);
+    return false;
+  }
+}
+
+/**
+ * Guarda una fotografía tanto en caché local (IndexedDB) para visualización offline inmediata,
+ * como en el servidor (/api/upload-photo) para persistencia permanente y sincronización multi-dispositivo.
+ */
+export async function saveImageOfflineAndServer(
+  fileOrBase64: File | string,
+  prefix: string = 'foto'
+): Promise<string> {
+  let base64String = '';
+  let filename: string | undefined = undefined;
+
+  if (typeof fileOrBase64 === 'string') {
+    base64String = fileOrBase64;
+  } else if (fileOrBase64 instanceof File) {
+    filename = fileOrBase64.name;
+    base64String = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(fileOrBase64);
+    });
+  }
+
+  if (!base64String) {
+    throw new Error('No se pudo leer la imagen');
+  }
+
+  // Clave temporal local mientras se confirma servidor
+  const localTempKey = `offline-${prefix}-${Date.now()}`;
+  await cacheSingleImageWithData(localTempKey, base64String);
+
+  const isMacho = prefix === 'macho_tuerto' || prefix.includes('macho') || (filename && filename.toLowerCase().includes('macho'));
+
+  // Intentar subir de inmediato al servidor para sincronizar con todos los dispositivos
+  try {
+    const res = await fetch('/api/upload-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        base64Data: base64String,
+        filename,
+        prefix,
+      }),
+    });
+    const data = await res.json();
+    if (data.success && data.url) {
+      const permanentUrl = data.url;
+      // Guardar en CacheStorage e IndexedDB bajo la URL permanente
+      await cacheSingleImageWithData(permanentUrl, base64String);
+      
+      if (isMacho) {
+        try {
+          localStorage.setItem('bio_macho_tuerto_custom_photo', permanentUrl);
+          await cacheSingleImageWithData('bio_macho_tuerto_custom_photo', base64String);
+        } catch {}
+      }
+
+      return permanentUrl;
+    }
+  } catch (err) {
+    console.warn('Servidor no disponible al subir foto, operando en modo offline de campo:', err);
+  }
+
+  // Si no hay internet o el servidor está temporalmente inaccesible, devolver base64
+  // pero ya quedó asegurado en IndexedDB
+  if (isMacho) {
+    try {
+      localStorage.setItem('bio_macho_tuerto_custom_photo', base64String);
+      await cacheSingleImageWithData('bio_macho_tuerto_custom_photo', base64String);
+    } catch {}
+  }
+  return base64String;
+}
+
+/**
+ * Maneja fallos de carga en elementos <img> buscando la imagen en la caché IndexedDB
+ */
+export async function handleImageOfflineFallback(
+  imgElement: HTMLImageElement,
+  fallbackUrl?: string
+): Promise<void> {
+  const currentSrc = imgElement.src || '';
+
+  // 1. Intentar recuperar de IndexedDB o CacheStorage
+  try {
+    const cached = await getCachedImageUrl(currentSrc);
+    if (cached && cached !== currentSrc) {
+      imgElement.src = cached;
+      return;
+    }
+    const pathOnly = new URL(currentSrc, window.location.origin).pathname;
+    const cachedPath = await getCachedImageUrl(pathOnly);
+    if (cachedPath && cachedPath !== currentSrc) {
+      imgElement.src = cachedPath;
+      return;
+    }
+    const filename = pathOnly.split('/').pop();
+    if (filename) {
+      const cachedFile = await getCachedImageUrl(filename);
+      if (cachedFile && cachedFile !== currentSrc) {
+        imgElement.src = cachedFile;
+        return;
+      }
+    }
+  } catch {}
+
+  // 2. Proteger la fotografía del macho tuerto: NUNCA colocar la foto de la portada
+  const isMacho =
+    currentSrc.includes('macho') ||
+    currentSrc.includes('un_ojo') ||
+    imgElement.getAttribute('data-is-macho') === 'true' ||
+    imgElement.alt?.toLowerCase().includes('macho tuerto') ||
+    fallbackUrl?.includes('macho');
+
+  if (isMacho) {
+    try {
+      const customMacho = localStorage.getItem('bio_macho_tuerto_custom_photo');
+      if (customMacho) {
+        const cachedCustom = await getCachedImageUrl(customMacho);
+        if (cachedCustom) {
+          imgElement.src = cachedCustom;
+          return;
+        }
+        if (customMacho.startsWith('data:') || customMacho.startsWith('/uploads/')) {
+          imgElement.src = customMacho;
+          return;
+        }
+      }
+    } catch {}
+    imgElement.src = '/hallazgo_macho_un_ojo.jpg';
+    return;
+  }
+
+  // 3. Si se especificó un fallback distinto a la portada de Isthmohyla
+  if (fallbackUrl && fallbackUrl !== '/isthmohyla_nacientes.jpg') {
+    imgElement.src = fallbackUrl;
+    return;
+  }
+
+  // 4. Si la imagen pertenece específicamente a Isthmohyla nacientes
+  if (imgElement.alt?.toLowerCase().includes('isthmohyla') || currentSrc.includes('isthmohyla')) {
+    imgElement.src = '/isthmohyla_nacientes.jpg';
+    return;
+  }
+
+  // 5. Placeholder svg biológico neutral para otras especies o fotografías de usuario
+  imgElement.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="%230f382a"/><text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" fill="%236cf8bb" font-family="sans-serif" font-size="15" font-weight="bold">Fotografía en Almacenamiento Local</text><text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" fill="%23a5d0bc" font-family="sans-serif" font-size="12">Sincronizado sin conexión</text></svg>`;
+}
+
+/**
  * Obtiene la imagen de la caché local (IndexedDB o CacheStorage)
  */
 export async function getCachedImageUrl(url: string): Promise<string | null> {
@@ -102,28 +302,47 @@ export async function getCachedImageUrl(url: string): Promise<string | null> {
   if (url.startsWith('data:') || url.startsWith('blob:')) return url;
 
   try {
-    // Intentar IndexedDB
     const db = await openDb();
-    const item: CacheItem | null = await new Promise((resolve) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(url);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    });
+    const urlsToTry = [
+      url,
+      new URL(url, window.location.origin).pathname,
+      url.split('/').pop() || '',
+    ].filter(Boolean);
 
-    if (item) {
-      if (item.base64DataUrl) return item.base64DataUrl;
-      if (item.blob) return URL.createObjectURL(item.blob);
+    // Si es macho tuerto, intentar también la clave personalizada
+    if (url.includes('macho') || url.includes('un_ojo')) {
+      urlsToTry.push('bio_macho_tuerto_custom_photo');
+      const customKey = typeof window !== 'undefined' ? localStorage.getItem('bio_macho_tuerto_custom_photo') : null;
+      if (customKey) {
+        urlsToTry.unshift(customKey);
+        urlsToTry.unshift(new URL(customKey, window.location.origin).pathname);
+      }
+    }
+
+    for (const testUrl of urlsToTry) {
+      const item: CacheItem | null = await new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(testUrl);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+
+      if (item) {
+        if (item.base64DataUrl) return item.base64DataUrl;
+        if (item.blob) return URL.createObjectURL(item.blob);
+      }
     }
 
     // Intentar CacheStorage
     if ('caches' in window) {
       const cache = await caches.open(CACHE_NAME);
-      const match = await cache.match(url);
-      if (match) {
-        const blob = await match.blob();
-        return URL.createObjectURL(blob);
+      for (const testUrl of urlsToTry) {
+        const match = await cache.match(testUrl);
+        if (match) {
+          const blob = await match.blob();
+          return URL.createObjectURL(blob);
+        }
       }
     }
   } catch (e) {

@@ -15,6 +15,7 @@ import { DarwinCoreExporterModal } from './components/DarwinCoreExporterModal';
 import { SyncBackupModal } from './components/SyncBackupModal';
 import { StatisticsView } from './components/StatisticsView';
 import { DeviceProfileModal } from './components/DeviceProfileModal';
+import { cacheAllSpecimensMedia } from './utils/offlineImageCache';
 
 type ActiveView = 'COVER' | 'DETAIL' | 'MAP' | 'CATALOG' | 'STATISTICS';
 
@@ -67,7 +68,33 @@ function mergeSpecimenLists(existingList: SpecimenRecord[], incomingList: Specim
       for (const s of incomingSightings) {
         if (s && s.id) {
           const old = sightingMap.get(s.id);
-          sightingMap.set(s.id, old ? { ...old, ...s } : s);
+          if (!old) {
+            sightingMap.set(s.id, s);
+          } else {
+            const incomingCurious = s.curiousFindingPhoto;
+            const oldCurious = old.curiousFindingPhoto;
+            const isMacho = s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho');
+            let finalCuriousPhoto = incomingCurious;
+            if (isMacho) {
+              if (incomingCurious && !incomingCurious.includes('isthmohyla_nacientes') && !incomingCurious.includes('eye_zoom')) {
+                finalCuriousPhoto = incomingCurious;
+              } else if (oldCurious && !oldCurious.includes('isthmohyla_nacientes') && !oldCurious.includes('eye_zoom')) {
+                finalCuriousPhoto = oldCurious;
+              } else {
+                finalCuriousPhoto = '/hallazgo_macho_un_ojo.jpg';
+              }
+            } else {
+              const incomingIsCustom = incomingCurious && (incomingCurious.startsWith('/uploads/') || incomingCurious.startsWith('data:') || incomingCurious.startsWith('blob:'));
+              const oldIsCustom = oldCurious && (oldCurious.startsWith('/uploads/') || oldCurious.startsWith('data:') || oldCurious.startsWith('blob:'));
+              finalCuriousPhoto = incomingIsCustom ? incomingCurious : (incomingCurious || (oldIsCustom ? oldCurious : incomingCurious));
+            }
+            sightingMap.set(s.id, {
+              ...old,
+              ...s,
+              curiousFindingPhoto: finalCuriousPhoto,
+              photoUrls: finalCuriousPhoto ? [finalCuriousPhoto] : (s.photoUrls || old.photoUrls),
+            });
+          }
         }
       }
 
@@ -77,7 +104,7 @@ function mergeSpecimenLists(existingList: SpecimenRecord[], incomingList: Specim
         return dateB.localeCompare(dateA);
       });
 
-      // Union of additional photos
+      // Union of additional photos with custom photo protection
       const existingPhotos = Array.isArray(existing.additionalPhotos) ? existing.additionalPhotos : [];
       const incomingPhotos = Array.isArray(incoming.additionalPhotos) ? incoming.additionalPhotos : [];
       const photoMap = new Map<string, any>();
@@ -88,13 +115,39 @@ function mergeSpecimenLists(existingList: SpecimenRecord[], incomingList: Specim
         if (p && (p.id || p.label)) {
           const key = p.id || p.label;
           const old = photoMap.get(key);
-          photoMap.set(key, old ? { ...old, ...p } : p);
+          if (!old) {
+            photoMap.set(key, p);
+          } else {
+            const isMacho = key === 'photo-4' || (old.label && old.label.toLowerCase().includes('macho tuerto')) || (p.label && p.label.toLowerCase().includes('macho tuerto'));
+            let finalUrl = p.url;
+            if (isMacho) {
+              if (p.url && !p.url.includes('isthmohyla_nacientes') && !p.url.includes('eye_zoom')) {
+                finalUrl = p.url;
+              } else if (old.url && !old.url.includes('isthmohyla_nacientes') && !old.url.includes('eye_zoom')) {
+                finalUrl = old.url;
+              } else {
+                finalUrl = '/hallazgo_macho_un_ojo.jpg';
+              }
+            } else {
+              const incomingIsCustom = p.url && (p.url.startsWith('/uploads/') || p.url.startsWith('data:') || p.url.startsWith('blob:'));
+              const oldIsCustom = old.url && (old.url.startsWith('/uploads/') || old.url.startsWith('data:') || old.url.startsWith('blob:'));
+              finalUrl = incomingIsCustom ? p.url : (p.url || (oldIsCustom ? old.url : p.url));
+            }
+            photoMap.set(key, { ...old, ...p, url: finalUrl });
+          }
         }
       }
+
+      const incomingHero = incoming.heroImage;
+      const oldHero = existing.heroImage;
+      const incomingHeroCustom = incomingHero && (incomingHero.startsWith('/uploads/') || incomingHero.startsWith('data:'));
+      const oldHeroCustom = oldHero && (oldHero.startsWith('/uploads/') || oldHero.startsWith('data:'));
+      const finalHero = incomingHeroCustom ? incomingHero : (oldHeroCustom ? oldHero : incomingHero || oldHero);
 
       result[idx] = {
         ...existing,
         ...incoming,
+        heroImage: finalHero,
         sightings: mergedSightings,
         additionalPhotos: Array.from(photoMap.values()),
       };
@@ -118,9 +171,6 @@ function sanitizeSpecimens(list: SpecimenRecord[]): SpecimenRecord[] {
   let filtered = (list || [])
     .filter((item) => !demoIdsToPurge.has(item.id))
     .map((item) => {
-      if (item.scientificName === 'Agalychnis callidryas') {
-        return INITIAL_SPECIMENS[0];
-      }
       if (
         item.scientificName === 'Isthmohyla nacientes' ||
         item.id === INITIAL_SPECIMENS[0].id
@@ -138,26 +188,51 @@ function sanitizeSpecimens(list: SpecimenRecord[]): SpecimenRecord[] {
           return dateB.localeCompare(dateA);
         });
 
-        // Ensure sight-dota-20261009 and curious finding has the correct one-eyed male photo
+        // Find any user-uploaded custom photo for macho tuerto from additionalPhotos or sightings
+        const rawPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
+          ? item.additionalPhotos
+          : INITIAL_SPECIMENS[0].additionalPhotos;
+
+        const existingP4 = (rawPhotos || []).find(
+          (p) => p.id === 'photo-4' || (p.label && p.label.toLowerCase().includes('macho tuerto'))
+        );
+        const p4HasValidPhoto = existingP4?.url && !existingP4.url.includes('isthmohyla_nacientes') && !existingP4.url.includes('eye_zoom');
+
+        const dotaSightRef = mergedSightings.find((s) => s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho'));
+        const sightHasValidPhoto = dotaSightRef?.curiousFindingPhoto && !dotaSightRef.curiousFindingPhoto.includes('isthmohyla_nacientes') && !dotaSightRef.curiousFindingPhoto.includes('eye_zoom');
+
+        // Best user custom photo, or permanent default macho tuerto (NEVER takes cover photo)
+        let activeMachoPhoto = '/hallazgo_macho_un_ojo.jpg';
+        const savedCustomMacho = typeof window !== 'undefined' ? localStorage.getItem('bio_macho_tuerto_custom_photo') : null;
+
+        if (p4HasValidPhoto && existingP4?.url) {
+          activeMachoPhoto = existingP4.url;
+        } else if (sightHasValidPhoto && dotaSightRef?.curiousFindingPhoto) {
+          activeMachoPhoto = dotaSightRef.curiousFindingPhoto;
+        } else if (savedCustomMacho && !savedCustomMacho.includes('isthmohyla_nacientes') && !savedCustomMacho.includes('eye_zoom')) {
+          activeMachoPhoto = savedCustomMacho;
+        }
+
+        // Ensure whatever custom photo is active is permanently saved locally and synchronized
+        if (activeMachoPhoto && activeMachoPhoto !== '/hallazgo_macho_un_ojo.jpg') {
+          try {
+            localStorage.setItem('bio_macho_tuerto_custom_photo', activeMachoPhoto);
+          } catch {}
+        }
+
+        // 1. Ensure sight-dota-20261009 keeps user custom photo or default macho tuerto
         mergedSightings = mergedSightings.map((s) => {
           if (s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho')) {
-            const isWrongUrl = !s.curiousFindingPhoto ||
-              s.curiousFindingPhoto.includes('isthmohyla_nacientes.jpg') ||
-              s.curiousFindingPhoto.includes('eye_zoom');
             return {
               ...s,
-              curiousFindingPhoto: isWrongUrl ? '/hallazgo_macho_un_ojo.jpg' : s.curiousFindingPhoto,
-              photoUrls: isWrongUrl ? ['/hallazgo_macho_un_ojo.jpg'] : (s.photoUrls || ['/hallazgo_macho_un_ojo.jpg']),
+              curiousFindingPhoto: activeMachoPhoto,
+              photoUrls: activeMachoPhoto ? [activeMachoPhoto] : ['/hallazgo_macho_un_ojo.jpg'],
             };
           }
           return s;
         });
 
-        const rawPhotos = (item.additionalPhotos && item.additionalPhotos.length > 0)
-          ? item.additionalPhotos
-          : INITIAL_SPECIMENS[0].additionalPhotos;
-
-        // Ensure photo-3 (Detalle Ocular) ALWAYS keeps the eye zoom macro and photo-4 keeps macho tuerto
+        // 2. Ensure photo-3 (Detalle Ocular) ALWAYS keeps the eye zoom macro
         let cleanedPhotos = (rawPhotos || []).map((p) => {
           if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
             return {
@@ -170,13 +245,22 @@ function sanitizeSpecimens(list: SpecimenRecord[]): SpecimenRecord[] {
           return p;
         });
 
-        const hasPhoto4 = cleanedPhotos.some(
+        // 3. Ensure photo-4 (Hallazgo: Macho Tuerto) is permanently synchronized and NEVER takes cover photo
+        const p4Idx = cleanedPhotos.findIndex(
           (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
         );
-        if (!hasPhoto4) {
+        if (p4Idx >= 0) {
+          cleanedPhotos[p4Idx] = {
+            ...cleanedPhotos[p4Idx],
+            id: 'photo-4',
+            url: activeMachoPhoto,
+            label: 'Hallazgo: Macho Tuerto',
+            description: cleanedPhotos[p4Idx].description || 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural). Era el que cantaba con mayor potencia acústica a 45 cm del caudal.',
+          };
+        } else {
           cleanedPhotos.push({
             id: 'photo-4',
-            url: '/hallazgo_macho_un_ojo.jpg',
+            url: activeMachoPhoto,
             label: 'Hallazgo: Macho Tuerto',
             description: 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural). Era el que cantaba con mayor potencia acústica a 45 cm del caudal.',
           });
@@ -184,7 +268,7 @@ function sanitizeSpecimens(list: SpecimenRecord[]): SpecimenRecord[] {
 
         return {
           ...item,
-          heroImage: '/isthmohyla_nacientes.jpg',
+          heroImage: item.heroImage || '/isthmohyla_nacientes.jpg',
           additionalPhotos: cleanedPhotos,
           sightings: mergedSightings,
           morphometrics: {
@@ -287,14 +371,18 @@ export default function App() {
       if (data.success && Array.isArray(data.data) && data.data.length > 0) {
         const serverMerged = sanitizeSpecimens(data.data);
         setSpecimens(serverMerged);
+        cacheAllSpecimensMedia(serverMerged).catch(() => {});
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(serverMerged));
           localStorage.setItem(TIMESTAMP_KEY, String(data.lastModified || now));
           localStorage.removeItem(CHANGED_KEY);
         } catch {}
+      } else {
+        cacheAllSpecimensMedia(sanitized).catch(() => {});
       }
     } catch (err) {
       console.warn('Servidor offline o sincronizando en segundo plano:', err);
+      cacheAllSpecimensMedia(sanitized).catch(() => {});
     }
   };
 
@@ -303,11 +391,7 @@ export default function App() {
     if (currentSpecimen && specimens.length > 0) {
       const fresh = specimens.find((s) => s.id === currentSpecimen.id);
       if (fresh) {
-        if (
-          fresh.sightings?.length !== currentSpecimen.sightings?.length ||
-          fresh.additionalPhotos?.length !== currentSpecimen.additionalPhotos?.length ||
-          JSON.stringify(fresh.sightings) !== JSON.stringify(currentSpecimen.sightings)
-        ) {
+        if (JSON.stringify(fresh) !== JSON.stringify(currentSpecimen)) {
           setCurrentSpecimen(fresh);
         }
       } else {
@@ -345,6 +429,7 @@ export default function App() {
             }).catch(() => {});
           }
 
+          cacheAllSpecimensMedia(sanitized).catch(() => {});
           return sanitized;
         });
 

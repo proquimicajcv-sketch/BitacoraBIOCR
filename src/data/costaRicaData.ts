@@ -158,6 +158,78 @@ export const COSTA_RICA_HOTSPOTS: CostaRicaHotspot[] = [
     conservationArea: 'Área de Conservación Arenal Tempisque (ACAT)',
     description: 'Humedal de importancia Ramsar vital para cientos de especies de aves migratorias y acuáticas.',
   },
+  {
+    id: 'tapanti',
+    name: 'Parque Nacional Tapantí - Macizo de la Muerte',
+    subLocation: 'Cuenca del Río Grande de Orosi, Cartago',
+    province: 'Cartago',
+    latitude: 9.7612,
+    longitude: -83.7845,
+    elevation: 1600,
+    lifeZone: 'Bosque Pluvial Montano Bajo (bp-MB)',
+    conservationArea: 'Área de Conservación La Amistad Pacífico (ACLAP)',
+    description: 'Una de las zonas más lluviosas del país con nacientes de ríos cristalinos y alta riqueza de anfibios.',
+  },
+  {
+    id: 'braulio-carrillo',
+    name: 'Parque Nacional Braulio Carrillo',
+    subLocation: 'Paso de La Palma / Quebrada González, Heredia/San José',
+    province: 'Heredia',
+    latitude: 10.1583,
+    longitude: -83.9744,
+    elevation: 1100,
+    lifeZone: 'Bosque Pluvial Premontano (bp-P)',
+    conservationArea: 'Área de Conservación Cordillera Central (ACC)',
+    description: 'Extenso corredor biológico selvático que protege las nacientes del Caribe Central y cuencas metropolitanas.',
+  },
+  {
+    id: 'las-cruces-san-vito',
+    name: 'Estación Biológica Las Cruces / Jardín Wilson',
+    subLocation: 'San Vito de Coto Brus, Puntarenas',
+    province: 'Puntarenas',
+    latitude: 8.7853,
+    longitude: -82.9592,
+    elevation: 1200,
+    lifeZone: 'Bosque Muy Húmedo Premontano (bmh-P)',
+    conservationArea: 'Área de Conservación La Amistad Pacífico (ACLAP)',
+    description: 'Santuario de la OET para la conservación de la flora endémica y aves del Pacífico Sur de Costa Rica.',
+  },
+  {
+    id: 'santa-rosa',
+    name: 'Parque Nacional Santa Rosa',
+    subLocation: 'Sector Murciélago / Bahía Santa Elena, Guanacaste',
+    province: 'Guanacaste',
+    latitude: 10.8389,
+    longitude: -85.6178,
+    elevation: 290,
+    lifeZone: 'Bosque Tropical Seco (bs-T)',
+    conservationArea: 'Área de Conservación Guanacaste (ACG)',
+    description: 'El remanente más grande y mejor conservado de bosque seco mesoamericano con jaguares y tortugas lora.',
+  },
+  {
+    id: 'chirripo',
+    name: 'Parque Nacional Chirripó',
+    subLocation: 'San Gerardo de Rivas, Cordillera de Talamanca',
+    province: 'San José',
+    latitude: 9.4842,
+    longitude: -83.4886,
+    elevation: 3200,
+    lifeZone: 'Páramo Subalpino (p-SA)',
+    conservationArea: 'Área de Conservación La Amistad Pacífico (ACLAP)',
+    description: 'Cumbre más alta de Costa Rica (3.820 msnm) con lagunas de origen glaciar y vegetación de frailejones y chusqueas.',
+  },
+  {
+    id: 'valle-central-san-jose',
+    name: 'Valle Central (San José - San Pedro - Curridabat)',
+    subLocation: 'Cuenca Alta Río Virilla, Valle Central',
+    province: 'San José',
+    latitude: 9.9333,
+    longitude: -84.0833,
+    elevation: 1160,
+    lifeZone: 'Bosque Húmedo Premontano (bh-P)',
+    conservationArea: 'Área de Conservación Cordillera Central (ACC)',
+    description: 'Interfase urbana-periurbana de cafetales y ríos montanos del Valle Central de Costa Rica.',
+  },
 ];
 
 export interface HoldridgeLifeZone {
@@ -360,4 +432,39 @@ export function findNearestHotspot(lat: number, lng: number): CostaRicaHotspot {
   }
 
   return nearest;
+}
+
+export interface DetectedLocationResult {
+  locality: string;
+  subLocation: string;
+  province: string;
+  elevation: number;
+  lifeZone: string;
+  conservationArea: string;
+  lat: number;
+  lng: number;
+  dms: string;
+}
+
+/**
+ * Automagically detects the locality, province, elevation and Holdridge Life Zone
+ * from geographic coordinates anywhere in Costa Rica.
+ */
+export function detectLocationAndLifeZone(lat: number, lng: number, elevationOverride?: number): DetectedLocationResult {
+  const nearest = findNearestHotspot(lat, lng);
+  const elev = typeof elevationOverride === 'number' && elevationOverride > 0 ? elevationOverride : nearest.elevation;
+  const holdridge = estimateHoldridgeZone(elev, lat, lng);
+  const dms = formatCoordinatesDMS(lat, lng);
+
+  return {
+    locality: nearest.name,
+    subLocation: nearest.subLocation,
+    province: `${nearest.province}, Costa Rica`,
+    elevation: elev,
+    lifeZone: holdridge.name,
+    conservationArea: nearest.conservationArea,
+    lat,
+    lng,
+    dms: dms.combined,
+  };
 }

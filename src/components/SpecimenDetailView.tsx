@@ -18,10 +18,13 @@ import { AudioRecordingModal } from './AudioRecordingModal';
 import { CostaRicaMap } from './CostaRicaMap';
 import { CachedImage } from './CachedImage';
 import { ThemeSwitcher } from './ThemeSwitcher';
+import { saveImageOfflineAndServer, handleImageOfflineFallback } from '../utils/offlineImageCache';
 import {
   formatCoordinatesDMS,
   findNearestHotspot,
   estimateHoldridgeZone,
+  HOLDRIDGE_LIFE_ZONES_CR,
+  detectLocationAndLifeZone,
 } from '../data/costaRicaData';
 import { formatProtectedCoordinates } from '../utils/geoprivacy';
 import { fetchLiveFieldWeather } from '../utils/weatherMoonService';
@@ -462,96 +465,131 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
     }
   };
 
-  const handleDirectPhotoUpload = (photoId: string, file: File) => {
+  const handleDirectPhotoUpload = async (photoId: string, file: File) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      if (typeof ev.target?.result === 'string') {
-        const newUrl = ev.target.result;
-        const updatedPhotos = (specimen.additionalPhotos || []).map((p) => {
-          if (p.id === photoId) {
+    try {
+      const isMacho = photoId === 'photo-4' || (specimen.additionalPhotos?.find((p) => p.id === photoId)?.label?.toLowerCase().includes('macho tuerto'));
+      const prefix = isMacho ? 'macho_tuerto' : 'specimen_gallery';
+      const permanentUrl = await saveImageOfflineAndServer(file, prefix);
+
+      const updatedPhotos = (specimen.additionalPhotos || []).map((p) => {
+        if (p.id === photoId) {
+          return {
+            ...p,
+            url: permanentUrl,
+          };
+        }
+        return p;
+      });
+
+      // Si es el macho tuerto, mantener sincronizados también los hallazgos curiosos
+      let updatedSightings = specimen.sightings || [];
+      if (isMacho) {
+        updatedSightings = updatedSightings.map((s) => {
+          if (s.id === 'sight-dota-20261009' || s.isCuriousFinding || s.curiousFindingTitle?.includes('Macho')) {
             return {
-              ...p,
-              url: newUrl,
+              ...s,
+              curiousFindingPhoto: permanentUrl,
+              photoUrls: [permanentUrl],
             };
           }
-          return p;
+          return s;
         });
-        const updatedSpecimen: SpecimenRecord = {
-          ...specimen,
-          additionalPhotos: updatedPhotos,
-        };
-        if (onSaveSpecimen) {
-          onSaveSpecimen(updatedSpecimen);
-        }
-        setSaveSuccessMsg('¡Fotografía sustituida y guardada exitosamente en este registro!');
-        setTimeout(() => setSaveSuccessMsg(null), 4000);
       }
-    };
-    reader.readAsDataURL(file);
+
+      const updatedSpecimen: SpecimenRecord = {
+        ...specimen,
+        sightings: updatedSightings,
+        additionalPhotos: updatedPhotos,
+      };
+      if (onSaveSpecimen) {
+        onSaveSpecimen(updatedSpecimen);
+      }
+      setSaveSuccessMsg('¡Fotografía sustituida, guardada y sincronizada para todos los dispositivos!');
+      setTimeout(() => setSaveSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error('Error al subir foto:', err);
+      alert('Error al guardar fotografía: ' + (err?.message || err));
+    }
   };
 
-  const handleSaveCuriousFindingPhoto = (sightingId: string, newPhotoUrl: string, newDesc?: string) => {
-    if (!newPhotoUrl) return;
+  const handleSaveCuriousFindingPhoto = async (sightingId: string, newPhotoUrlOrFile: string | File, newDesc?: string) => {
+    if (!newPhotoUrlOrFile) return;
 
-    // 1. Update ONLY this sighting's curiousFindingPhoto
-    const updatedSightings = (specimen.sightings || []).map((s) => {
-      if (s.id === sightingId) {
-        return {
-          ...s,
-          curiousFindingPhoto: newPhotoUrl,
-          photoUrls: [newPhotoUrl],
-          curiousFindingDescription: newDesc || s.curiousFindingDescription,
-        };
+    try {
+      let finalUrl = '';
+      if (typeof newPhotoUrlOrFile === 'string') {
+        if (newPhotoUrlOrFile.startsWith('data:')) {
+          finalUrl = await saveImageOfflineAndServer(newPhotoUrlOrFile, 'macho_tuerto');
+        } else {
+          finalUrl = newPhotoUrlOrFile;
+        }
+      } else if (newPhotoUrlOrFile instanceof File) {
+        finalUrl = await saveImageOfflineAndServer(newPhotoUrlOrFile, 'macho_tuerto');
       }
-      return s;
-    });
 
-    // 2. Update photo-4 ("Hallazgo: Macho Tuerto") in additionalPhotos WITHOUT EVER touching photo-3 ("Detalle Ocular")
-    let updatedPhotos = [...(specimen.additionalPhotos || [])];
-    const p4Idx = updatedPhotos.findIndex(
-      (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
-    );
-    if (p4Idx >= 0) {
-      updatedPhotos[p4Idx] = {
-        ...updatedPhotos[p4Idx],
-        url: newPhotoUrl,
-        description: newDesc || updatedPhotos[p4Idx].description,
-      };
-    } else {
-      updatedPhotos.push({
-        id: 'photo-4',
-        url: newPhotoUrl,
-        label: 'Hallazgo: Macho Tuerto',
-        description: newDesc || 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural).',
+      // 1. Update this sighting's curiousFindingPhoto
+      const updatedSightings = (specimen.sightings || []).map((s) => {
+        if (s.id === sightingId || s.id === 'sight-dota-20261009' || s.curiousFindingTitle?.includes('Macho')) {
+          return {
+            ...s,
+            curiousFindingPhoto: finalUrl,
+            photoUrls: [finalUrl],
+            curiousFindingDescription: newDesc || s.curiousFindingDescription,
+          };
+        }
+        return s;
       });
-    }
 
-    // 3. ABSOLUTELY PROTECT photo-3 "Detalle Ocular" so it NEVER gets changed or overwritten
-    updatedPhotos = updatedPhotos.map((p) => {
-      if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
-        return {
-          ...p,
-          url: '/isthmohyla_nacientes_eye_zoom.jpg',
-          label: 'Detalle Ocular',
-          description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
+      // 2. Update photo-4 ("Hallazgo: Macho Tuerto") in additionalPhotos WITHOUT EVER touching photo-3 ("Detalle Ocular")
+      let updatedPhotos = [...(specimen.additionalPhotos || [])];
+      const p4Idx = updatedPhotos.findIndex(
+        (p) => p.id === 'photo-4' || p.label.toLowerCase().includes('macho tuerto')
+      );
+      if (p4Idx >= 0) {
+        updatedPhotos[p4Idx] = {
+          ...updatedPhotos[p4Idx],
+          url: finalUrl,
+          description: newDesc || updatedPhotos[p4Idx].description,
         };
+      } else {
+        updatedPhotos.push({
+          id: 'photo-4',
+          url: finalUrl,
+          label: 'Hallazgo: Macho Tuerto',
+          description: newDesc || 'Hallazgo curioso en Santa María de Dota (Viernes 9): Macho adulto de Isthmohyla nacientes al que le falta un ojo (anoftalmia/cicatrización natural).',
+        });
       }
-      return p;
-    });
 
-    const updatedSpecimen: SpecimenRecord = {
-      ...specimen,
-      sightings: updatedSightings,
-      additionalPhotos: updatedPhotos,
-    };
+      // 3. ABSOLUTELY PROTECT photo-3 "Detalle Ocular" so it NEVER gets changed or overwritten
+      updatedPhotos = updatedPhotos.map((p) => {
+        if (p.id === 'photo-3' || p.label === 'Detalle Ocular') {
+          return {
+            ...p,
+            url: '/isthmohyla_nacientes_eye_zoom.jpg',
+            label: 'Detalle Ocular',
+            description: 'Macro zoom de alta precisión y nitidez del ojo de Isthmohyla nacientes. Se aprecia el iris cobrizo-dorado metálico característico con reticulaciones oscuras dendríticas, pupila horizontal adaptada a baja luminosidad en quebradas y piel verde esmeralda con gránulos cutáneos húmedos.',
+          };
+        }
+        return p;
+      });
 
-    if (onSaveSpecimen) {
-      onSaveSpecimen(updatedSpecimen);
+      const updatedSpecimen: SpecimenRecord = {
+        ...specimen,
+        sightings: updatedSightings,
+        additionalPhotos: updatedPhotos,
+      };
+
+      if (onSaveSpecimen) {
+        onSaveSpecimen(updatedSpecimen);
+      }
+      setEditingPhoto(null);
+      setSaveSuccessMsg('¡Fotografía del macho tuerto fijada y sincronizada permanentemente en todos los dispositivos!');
+      setTimeout(() => setSaveSuccessMsg(null), 3500);
+    } catch (err: any) {
+      console.error('Error al guardar foto de macho tuerto:', err);
+      alert('Error al guardar foto: ' + (err?.message || err));
     }
-    setEditingPhoto(null);
-    setSaveSuccessMsg('¡Fotografía del macho tuerto sustituida exitosamente en esta escena!');
-    setTimeout(() => setSaveSuccessMsg(null), 3500);
   };
 
   return (
@@ -622,8 +660,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               src={specimen.heroImage || '/isthmohyla_nacientes.jpg'}
               alt={specimen.heroImageDescription}
               onError={(e) => {
-                // If remote photo fails, seamlessly fallback to local authentic photo
-                (e.currentTarget as HTMLImageElement).src = '/isthmohyla_nacientes.jpg';
+                handleImageOfflineFallback(e.currentTarget as HTMLImageElement, '/isthmohyla_nacientes.jpg');
               }}
               className={`w-full h-full object-cover transition-transform duration-500 ease-out select-none cursor-pointer ${
                 isZoomed ? 'scale-150' : 'scale-100 hover:scale-105'
@@ -1173,6 +1210,10 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                         src={photo.url}
                         alt={photo.label}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          const isMacho = photo.id === 'photo-4' || (photo.label && photo.label.toLowerCase().includes('macho tuerto'));
+                          handleImageOfflineFallback(e.currentTarget as HTMLImageElement, isMacho ? '/hallazgo_macho_un_ojo.jpg' : '/isthmohyla_nacientes.jpg');
+                        }}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
                     </div>
@@ -1269,6 +1310,9 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                             src={c.curiousFindingPhoto || '/hallazgo_macho_un_ojo.jpg'}
                             alt={c.curiousFindingTitle || 'Foto del hallazgo'}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              handleImageOfflineFallback(e.currentTarget as HTMLImageElement, '/hallazgo_macho_un_ojo.jpg');
+                            }}
                           />
                           <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
 
@@ -1356,13 +1400,7 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const reader = new FileReader();
-                                reader.onload = (ev) => {
-                                  if (typeof ev.target?.result === 'string') {
-                                    handleSaveCuriousFindingPhoto(c.id, ev.target.result);
-                                  }
-                                };
-                                reader.readAsDataURL(file);
+                                handleSaveCuriousFindingPhoto(c.id, file);
                               }
                             }}
                           />
@@ -1785,19 +1823,164 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                 />
               </div>
 
-              {/* Localidad */}
-              <div>
-                <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
-                  Localidad / Punto de Avistamiento *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={sightingLocality}
-                  onChange={(e) => setSightingLocality(e.target.value)}
-                  placeholder="Ej: Sendero Río Sarapiquí..."
-                  className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs text-[#191c19] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
-                />
+              {/* Ubicación Geográfica, Coordenadas y Zona de Vida del Avistamiento */}
+              <div className="p-3.5 rounded-2xl bg-[#f8faf4] border border-[#c1c8c3] flex flex-col gap-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <label className="text-xs font-bold text-[#002217] uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[#006c49] text-[18px]">location_on</span>
+                    Ubicación y Zona de Vida del Avistamiento
+                  </label>
+                  <span className="text-[10px] font-mono font-bold text-[#006c49] bg-[#6cf8bb]/20 px-2 py-0.5 rounded-md">
+                    WGS84 • Costa Rica
+                  </span>
+                </div>
+
+                {/* Selector: Automático por Mapa vs Entrada Manual */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-[#edefe9] rounded-xl text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setShowSightingMap(true)}
+                    className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                      showSightingMap
+                        ? 'bg-[#002217] text-[#6cf8bb] shadow-sm'
+                        : 'text-[#414844] hover:text-[#191c19]'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">map</span>
+                    <span>Mapa (Automático)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSightingMap(false)}
+                    className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                      !showSightingMap
+                        ? 'bg-[#002217] text-[#6cf8bb] shadow-sm'
+                        : 'text-[#414844] hover:text-[#191c19]'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">edit_location_alt</span>
+                    <span>Manual</span>
+                  </button>
+                </div>
+
+                {showSightingMap ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="p-2 rounded-lg bg-[#f0f4ee] border border-[#c1ecd7] text-[11px] text-[#002116] flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[#006c49] text-[16px]">touch_app</span>
+                      <span>Toca en el mapa para colocar el avistamiento. El sistema leerá las coordenadas y la zona de vida automáticamente.</span>
+                    </div>
+                    <div className="rounded-xl overflow-hidden border border-[#c1c8c3] h-60 relative shadow-sm">
+                      <CostaRicaMap
+                        pickerMode={true}
+                        initialCoords={sightingCoords}
+                        onCoordsChange={(newCoords) => {
+                          setSightingCoords({ lat: newCoords.lat, lng: newCoords.lng });
+                          const detected = detectLocationAndLifeZone(newCoords.lat, newCoords.lng);
+                          setSightingLocality(detected.locality);
+                          setSightingCoordsDms(detected.dms);
+                          setSightingLifeZone(detected.lifeZone);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#414844] uppercase mb-1">
+                        Latitud (Decimal N)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.000001"
+                        value={sightingCoords.lat}
+                        onChange={(e) => {
+                          const lat = parseFloat(e.target.value);
+                          if (!isNaN(lat)) {
+                            const next = { ...sightingCoords, lat };
+                            setSightingCoords(next);
+                            setSightingCoordsDms(formatCoordinatesDMS(lat, sightingCoords.lng).combined);
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#c1c8c3] text-xs font-mono font-bold text-[#002217] bg-white focus:ring-2 focus:ring-[#006c49]"
+                        placeholder="ej. 9.6608"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#414844] uppercase mb-1">
+                        Longitud (Decimal W)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.000001"
+                        value={sightingCoords.lng}
+                        onChange={(e) => {
+                          const lng = parseFloat(e.target.value);
+                          if (!isNaN(lng)) {
+                            const next = { ...sightingCoords, lng };
+                            setSightingCoords(next);
+                            setSightingCoordsDms(formatCoordinatesDMS(sightingCoords.lat, lng).combined);
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#c1c8c3] text-xs font-mono font-bold text-[#002217] bg-white focus:ring-2 focus:ring-[#006c49]"
+                        placeholder="ej. -84.0205"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const detected = detectLocationAndLifeZone(sightingCoords.lat, sightingCoords.lng);
+                          setSightingLocality(detected.locality);
+                          setSightingCoordsDms(detected.dms);
+                          setSightingLifeZone(detected.lifeZone);
+                        }}
+                        className="w-full py-1.5 px-3 rounded-lg bg-[#006c49] hover:bg-[#003d2b] text-white text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">auto_fix_high</span>
+                        <span>Calcular Lugar y Zona de Vida con estas coordenadas</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Localidad input */}
+                <div>
+                  <label className="block text-[11px] font-bold text-[#002217] uppercase mb-1">
+                    Localidad / Punto de Avistamiento *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={sightingLocality}
+                    onChange={(e) => setSightingLocality(e.target.value)}
+                    placeholder="Ej: Quebrada en Santa María de Dota, Los Santos"
+                    className="w-full px-3 py-2 rounded-xl border border-[#c1c8c3] text-xs font-semibold text-[#191c19] bg-white focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                  />
+                </div>
+
+                {/* Coordenadas DMS & Zona de Vida */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#414844] uppercase mb-0.5">
+                      Coordenadas Registradas
+                    </label>
+                    <span className="font-mono font-bold text-[#002217] block truncate bg-white px-2.5 py-1.5 rounded-lg border border-[#c1c8c3]">
+                      {sightingCoordsDms || 'No calculadas'}
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#414844] uppercase mb-0.5">
+                      Zona de Vida (Holdridge)
+                    </label>
+                    <input
+                      type="text"
+                      value={sightingLifeZone}
+                      onChange={(e) => setSightingLifeZone(e.target.value)}
+                      placeholder="Ej: Bosque Pluvial Montano Bajo (bp-MB)"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-[#c1c8c3] bg-white text-xs text-[#002217] focus:outline-none focus:ring-2 focus:ring-[#006c49]"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Cantidad de Individuos y Clima */}
@@ -2037,16 +2220,16 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                              if (typeof ev.target?.result === 'string') {
-                                setSightingCuriousPhoto(ev.target.result);
-                              }
-                            };
-                            reader.readAsDataURL(file);
+                            try {
+                              const isMacho = sightingCuriousTitle.toLowerCase().includes('macho') || sightingCuriousDesc.toLowerCase().includes('macho') || sightingCuriousTitle.toLowerCase().includes('ojo');
+                              const permanentUrl = await saveImageOfflineAndServer(file, isMacho ? 'macho_tuerto' : 'sighting_curious');
+                              setSightingCuriousPhoto(permanentUrl);
+                            } catch (err) {
+                              console.error('Error al guardar foto del hallazgo:', err);
+                            }
                           }
                         }}
                         className="w-full text-xs text-[#92400e] file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#92400e] file:text-white file:cursor-pointer cursor-pointer"
@@ -2132,16 +2315,15 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               <input
                 type="file"
                 accept="image/*"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                      if (typeof ev.target?.result === 'string') {
-                        setNewPhotoUrl(ev.target.result);
-                      }
-                    };
-                    reader.readAsDataURL(file);
+                    try {
+                      const permanentUrl = await saveImageOfflineAndServer(file, 'hero_specimen');
+                      setNewPhotoUrl(permanentUrl);
+                    } catch (err) {
+                      console.error('Error saving hero photo:', err);
+                    }
                   }
                 }}
                 className="w-full text-xs text-[#414844] file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#002217] file:text-[#6cf8bb] file:cursor-pointer hover:file:bg-[#003d2b] cursor-pointer"
@@ -2255,16 +2437,16 @@ export const SpecimenDetailView: React.FC<SpecimenDetailViewProps> = ({
               <input
                 type="file"
                 accept="image/*"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => {
-                      if (typeof ev.target?.result === 'string') {
-                        setEditPhotoUrl(ev.target.result);
-                      }
-                    };
-                    reader.readAsDataURL(file);
+                    try {
+                      const isMacho = editingPhoto?.id === 'photo-4' || editingPhoto?.sightingId || editingPhoto?.label?.toLowerCase().includes('macho tuerto');
+                      const permanentUrl = await saveImageOfflineAndServer(file, isMacho ? 'macho_tuerto' : 'gallery_edit');
+                      setEditPhotoUrl(permanentUrl);
+                    } catch (err) {
+                      console.error('Error saving image:', err);
+                    }
                   }
                 }}
                 className="w-full text-xs text-[#414844] file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-[#002217] file:text-[#6cf8bb] file:cursor-pointer hover:file:bg-[#003d2b] cursor-pointer"

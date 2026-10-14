@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { SpecimenRecord } from '../types/specimen';
 import { ThemeSwitcher } from './ThemeSwitcher';
+import { handleImageOfflineFallback } from '../utils/offlineImageCache';
 
 interface SpecimenCatalogViewProps {
   specimens: SpecimenRecord[];
@@ -342,7 +343,7 @@ export const SpecimenCatalogView: React.FC<SpecimenCatalogViewProps> = ({
                     src={specimen.heroImage || '/isthmohyla_nacientes.jpg'}
                     alt={specimen.scientificName}
                     onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = '/isthmohyla_nacientes.jpg';
+                      handleImageOfflineFallback(e.currentTarget as HTMLImageElement, '/isthmohyla_nacientes.jpg');
                     }}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />

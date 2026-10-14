@@ -58,6 +58,13 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
   const [locationStatusMessage, setLocationStatusMessage] = useState<string>('');
   const [showHotspotsDrawer, setShowHotspotsDrawer] = useState(false);
 
+  const onCoordsChangeRef = useRef(onCoordsChange);
+  useEffect(() => {
+    onCoordsChangeRef.current = onCoordsChange;
+  }, [onCoordsChange]);
+
+  const handlePinPlacementRef = useRef<(lat: number, lng: number, fly?: boolean) => void>(() => {});
+
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -79,7 +86,7 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
     // Click handler for offline / manual placement
     map.on('click', (e: L.LeafletMouseEvent) => {
       const { lat, lng } = e.latlng;
-      handlePinPlacement(lat, lng, true);
+      handlePinPlacementRef.current(lat, lng, true);
     });
 
     return () => {
@@ -129,7 +136,7 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
     const nearest = findNearestHotspot(lat, lng);
     const predictedZone = estimateHoldridgeZone(nearest.elevation, lat, lng);
 
-    onCoordsChange?.({
+    onCoordsChangeRef.current?.({
       lat,
       lng,
       dms: dmsInfo.combined,
@@ -174,6 +181,7 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
       manualPinMarkerRef.current = marker;
     }
   };
+  handlePinPlacementRef.current = handlePinPlacement;
 
   // Online GPS Geolocation handler
   const handleLocateMeOnline = () => {
@@ -350,10 +358,10 @@ export const CostaRicaMap: React.FC<CostaRicaMapProps> = ({
 
   // When initialCoords changes externally in pickerMode
   useEffect(() => {
-    if (initialCoords) {
+    if (initialCoords && (initialCoords.lat !== currentCoords.lat || initialCoords.lng !== currentCoords.lng)) {
       handlePinPlacement(initialCoords.lat, initialCoords.lng, true);
     }
-  }, [initialCoords]);
+  }, [initialCoords?.lat, initialCoords?.lng]);
 
   const nearestHotspot = findNearestHotspot(currentCoords.lat, currentCoords.lng);
   const predictedHoldridge = estimateHoldridgeZone(nearestHotspot.elevation, currentCoords.lat, currentCoords.lng);
